@@ -321,9 +321,10 @@ public class NodeEditorActivity extends AppCompatActivity {
                 propertiesContainer.addView(til);
 
                 if (mediaFieldKey != null) {
+                    final String mfk = mediaFieldKey;
                     actv.setOnItemClickListener((parent, view, pos, id) -> {
                         String sel = (String) parent.getItemAtPosition(pos);
-                        setMediaFieldVisibility(mediaFieldKey, "upload".equals(sel));
+                        setMediaFieldVisibility(mfk, "upload".equals(sel));
                     });
                 }
             } else if (hasInputType && mediaFieldKey != null && key.equals(mediaFieldKey)) {
