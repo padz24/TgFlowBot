@@ -12,16 +12,6 @@
     android:title="@string/save_workflow"
     app:showAsAction="ifRoom" />
   <item
-    android:id="@+id/action_poll"
-    android:icon="@drawable/ic_add"
-    android:title="Poll Pesan"
-    app:showAsAction="never" />
-  <item
-    android:id="@+id/action_set_chat_id"
-    android:icon="@drawable/ic_add"
-    android:title="Set Chat ID"
-    app:showAsAction="never" />
-  <item
     android:id="@+id/action_view_log"
     android:icon="@drawable/ic_add"
     android:title="View Log"

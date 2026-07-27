@@ -459,12 +459,6 @@ public class MainActivity extends AppCompatActivity {
         } else if (id == R.id.action_run) {
             toggleWorkflow();
             return true;
-        } else if (id == R.id.action_poll) {
-            pollMessages();
-            return true;
-        } else if (id == R.id.action_set_chat_id) {
-            showChatIdInput();
-            return true;
         } else if (id == R.id.action_view_log) {
             showLogViewer();
             return true;
@@ -763,34 +757,27 @@ public class MainActivity extends AppCompatActivity {
         processIncomingMessage(lastChatId != null ? lastChatId : "0", "", sampleText);
     }
 
-    private void pollMessages() {
-        pollMessagesOnce(true);
-    }
-
     private void pollMessagesOnce(boolean showSnackbar) {
         if (pollingInProgress) return;
         pollingInProgress = true;
         String token = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getString("bot_token", "");
         if (token.isEmpty()) {
-            Snackbar.make(canvas, "Setel BOT_TOKEN dulu",
-                    Snackbar.LENGTH_LONG)
-                    .setAction("SETTING", v -> showSettingsDialog())
-                    .show();
+            pollingInProgress = false;
             return;
         }
 
         int offset = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getInt("update_offset", 0);
 
-        if (showSnackbar) {
-            Snackbar.make(canvas, "Polling pesan...", Snackbar.LENGTH_SHORT).show();
-        }
-
         int finalOffset = offset;
         new Thread(() -> {
             try {
-                okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+                okhttp3.OkHttpClient client = new okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                        .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                        .build();
                 String url = "https://api.telegram.org/bot" + token
                         + "/getUpdates?offset=" + finalOffset + "&timeout=10";
                 okhttp3.Request request = new okhttp3.Request.Builder().url(url).build();
@@ -814,14 +801,11 @@ public class MainActivity extends AppCompatActivity {
                         }
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                                 .edit().putInt("update_offset", maxId).apply();
-                    } else if (showSnackbar) {
-                        runOnUiThread(() -> Snackbar.make(canvas,
-                                "Tidak ada pesan baru", Snackbar.LENGTH_SHORT).show());
                     }
                 }
+            } catch (java.net.SocketTimeoutException ignored) {
             } catch (Exception e) {
-                runOnUiThread(() -> Snackbar.make(canvas,
-                        "Gagal poll: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+                addLog("[Poll] " + e.getClass().getSimpleName() + ": " + e.getMessage());
             }
             pollingInProgress = false;
             if (isRunning) {
