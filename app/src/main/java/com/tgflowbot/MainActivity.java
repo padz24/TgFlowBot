@@ -1936,15 +1936,19 @@ public class MainActivity extends AppCompatActivity {
         String[] mediaMethods = {"sendPhoto", "sendVideo", "sendDocument", "sendAudio", "sendVoice", "sendVideoNote", "sendAnimation", "sendSticker", "setChatPhoto", "setStickerSetThumbnail", "uploadStickerFile"};
         boolean isMedia = java.util.Arrays.asList(mediaMethods).contains(method.apiName);
         
-        if (isUpload && isMedia) {
+        if (isMedia) {
             String mediaField = getMediaFieldName(method.apiName);
-            String mediaUriString = params.get(mediaField);
-            if (mediaUriString != null && !mediaUriString.trim().isEmpty()) {
-                new Thread(() -> uploadFileWithUriString(mediaUriString, token, method, params, node, chatId, userName, text)).start();
+            String mediaValue = params.get(mediaField);
+            boolean isContentUri = mediaValue != null && (mediaValue.startsWith("content://") || mediaValue.startsWith("file://"));
+            
+            if ("upload".equals(inputType) || isContentUri) {
+                if (mediaValue != null && !mediaValue.trim().isEmpty()) {
+                    new Thread(() -> uploadFileWithUriString(mediaValue, token, method, params, node, chatId, userName, text)).start();
+                } else {
+                    pickFileAndUpload(token, method, params, node, chatId, userName, text);
+                }
                 return;
             }
-            pickFileAndUpload(token, method, params, node, chatId, userName, text);
-            return;
         }
         
         new Thread(() -> {
