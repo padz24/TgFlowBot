@@ -5,6 +5,8 @@ import android.os.Bundle;
 import android.view.MenuItem;
 import android.widget.LinearLayout;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.MaterialToolbar;
@@ -28,6 +30,9 @@ public class NodeEditorActivity extends AppCompatActivity {
     private TextInputEditText etLabel;
     private LinearLayout propertiesContainer;
     private TextInputEditText lastFocusedEditText;
+    private String pendingPickKey;
+    private TextInputEditText hiddenUriField;
+    private android.widget.TextView selectedFileNameView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -195,6 +200,56 @@ public class NodeEditorActivity extends AppCompatActivity {
         }
     }
 
+    private final ActivityResultLauncher<Intent> filePickerLauncher =
+        registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+            if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                android.net.Uri uri = result.getData().getData();
+                if (uri != null && pendingPickKey != null) {
+                    try {
+                        getContentResolver().takePersistableUriPermission(uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    } catch (Exception ignored) {}
+                    if (hiddenUriField != null) {
+                        hiddenUriField.setText(uri.toString());
+                    }
+                    if (selectedFileNameView != null) {
+                        selectedFileNameView.setText(getDisplayName(uri));
+                    }
+                    pendingPickKey = null;
+                }
+            }
+        });
+
+    private String getDisplayName(android.net.Uri uri) {
+        String name = null;
+        if ("content".equals(uri.getScheme())) {
+            try (android.database.Cursor c = getContentResolver().query(uri, null, null, null, null)) {
+                if (c != null && c.moveToFirst()) {
+                    int idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (idx >= 0) name = c.getString(idx);
+                }
+            } catch (Exception ignored) {}
+        }
+        if (name == null) name = uri.getLastPathSegment();
+        return name != null ? name : "file";
+    }
+
+    private String getMimeTypeForMethod(String apiName) {
+        switch (apiName) {
+            case "sendPhoto": return "image/*";
+            case "sendVideo": return "video/*";
+            case "sendAudio": return "audio/*";
+            case "sendVoice": return "audio/*";
+            case "sendVideoNote": return "video/*";
+            case "sendAnimation": return "image/gif";
+            case "sendSticker": return "image/webp";
+            case "setChatPhoto": return "image/*";
+            case "setStickerSetThumbnail": return "image/*";
+            case "uploadStickerFile": return "image/*";
+            default: return "*/*";
+        }
+    }
+
     private void renderParams(Map<String, String> saved) {
         propertiesContainer.removeAllViews();
 
@@ -214,6 +269,8 @@ public class NodeEditorActivity extends AppCompatActivity {
         }
 
         boolean hasAny = false;
+        int margin = (int) (8 * getResources().getDisplayMetrics().density);
+
         for (ParamDef param : pList) {
             if (param.name.equals("chat_id")) continue;
             hasAny = true;
@@ -229,8 +286,7 @@ public class NodeEditorActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT);
-                int m = (int) (8 * getResources().getDisplayMetrics().density);
-                lp.setMargins(0, m, 0, 0);
+                lp.setMargins(0, margin, 0, 0);
                 cb.setLayoutParams(lp);
                 propertiesContainer.addView(cb);
             } else if (hasInputType && key.equals("input_type")) {
@@ -260,8 +316,7 @@ public class NodeEditorActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT);
-                int m = (int) (8 * getResources().getDisplayMetrics().density);
-                lp.setMargins(0, m, 0, 0);
+                lp.setMargins(0, margin, 0, 0);
                 til.setLayoutParams(lp);
                 propertiesContainer.addView(til);
 
@@ -271,6 +326,71 @@ public class NodeEditorActivity extends AppCompatActivity {
                         setMediaFieldVisibility(mediaFieldKey, "upload".equals(sel));
                     });
                 }
+            } else if (hasInputType && mediaFieldKey != null && key.equals(mediaFieldKey)) {
+                TextInputLayout urlTil = new TextInputLayout(this);
+                urlTil.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                urlTil.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+                urlTil.setHint(param.hint + (param.required ? " *" : " (opsional)"));
+                urlTil.setTag("media_field_" + key);
+                urlTil.setHelperText(param.type.name().toLowerCase() + " — drag or tap variable chips below");
+
+                TextInputEditText urlEt = new TextInputEditText(this);
+                urlEt.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                urlEt.setText(value);
+                urlEt.setTag("prop_" + key);
+                setupDragAndDropForEditText(urlEt);
+                urlTil.addView(urlEt);
+                LinearLayout.LayoutParams urlLp = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                urlLp.setMargins(0, margin, 0, 0);
+                urlTil.setLayoutParams(urlLp);
+                propertiesContainer.addView(urlTil);
+
+                LinearLayout pickerLayout = new LinearLayout(this);
+                pickerLayout.setOrientation(LinearLayout.HORIZONTAL);
+                pickerLayout.setTag("picker_" + key);
+                pickerLayout.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                ((LinearLayout.LayoutParams) pickerLayout.getLayoutParams()).setMargins(0, margin, 0, 0);
+                pickerLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+                TextInputEditText hiddenEt = new TextInputEditText(this);
+                hiddenEt.setLayoutParams(new LinearLayout.LayoutParams(0, 0));
+                hiddenEt.setText(value);
+                hiddenEt.setTag("prop_" + key);
+                pickerLayout.addView(hiddenEt);
+
+                selectedFileNameView = new android.widget.TextView(this);
+                selectedFileNameView.setLayoutParams(new LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                selectedFileNameView.setPadding((int) (12 * getResources().getDisplayMetrics().density), 0, 0, 0);
+                selectedFileNameView.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+                selectedFileNameView.setSingleLine(true);
+                selectedFileNameView.setText(value != null && !value.isEmpty() ? getDisplayName(android.net.Uri.parse(value)) : "");
+                pickerLayout.addView(selectedFileNameView);
+
+                MaterialButton pickBtn = new MaterialButton(this);
+                pickBtn.setText("Pilih File");
+                pickBtn.setOnClickListener(v -> {
+                    pendingPickKey = key;
+                    hiddenUriField = hiddenEt;
+                    String mime = getMimeTypeForMethod(method.apiName);
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType(mime);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                    filePickerLauncher.launch(intent);
+                });
+                pickerLayout.addView(pickBtn);
+
+                propertiesContainer.addView(pickerLayout);
             } else {
                 TextInputLayout til = new TextInputLayout(this);
                 til.setLayoutParams(new LinearLayout.LayoutParams(
@@ -278,11 +398,7 @@ public class NodeEditorActivity extends AppCompatActivity {
                         LinearLayout.LayoutParams.WRAP_CONTENT));
                 til.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
                 til.setHint(param.hint + (param.required ? " *" : " (opsional)"));
-                if (mediaFieldKey != null && key.equals(mediaFieldKey)) {
-                    til.setTag("media_field_" + key);
-                } else {
-                    til.setTag("key_" + key);
-                }
+                til.setTag("key_" + key);
                 til.setHelperText(param.type.name().toLowerCase() + " — drag or tap variable chips below");
 
                 TextInputEditText et = new TextInputEditText(this);
@@ -304,8 +420,7 @@ public class NodeEditorActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT);
-                int m = (int) (8 * getResources().getDisplayMetrics().density);
-                lp.setMargins(0, m, 0, 0);
+                lp.setMargins(0, margin, 0, 0);
                 til.setLayoutParams(lp);
 
                 propertiesContainer.addView(til);
@@ -326,14 +441,16 @@ public class NodeEditorActivity extends AppCompatActivity {
         }
     }
 
-    private void setMediaFieldVisibility(String mediaFieldKey, boolean hide) {
+    private void setMediaFieldVisibility(String mediaFieldKey, boolean isUpload) {
         for (int i = 0; i < propertiesContainer.getChildCount(); i++) {
             android.view.View child = propertiesContainer.getChildAt(i);
-            if (child instanceof TextInputLayout) {
-                Object tag = child.getTag();
-                String expectedTag = "media_field_" + mediaFieldKey;
-                if (expectedTag.equals(tag) || (tag instanceof String && ((String) tag).startsWith("media_field_"))) {
-                    child.setVisibility(hide ? android.view.View.GONE : android.view.View.VISIBLE);
+            Object tag = child.getTag();
+            if (tag instanceof String) {
+                String t = (String) tag;
+                if (t.equals("media_field_" + mediaFieldKey)) {
+                    child.setVisibility(isUpload ? android.view.View.GONE : android.view.View.VISIBLE);
+                } else if (t.equals("picker_" + mediaFieldKey)) {
+                    child.setVisibility(isUpload ? android.view.View.VISIBLE : android.view.View.GONE);
                 }
             }
         }
@@ -362,6 +479,22 @@ public class NodeEditorActivity extends AppCompatActivity {
                 if (tag != null && tag.startsWith("key_")) {
                     key = tag.substring(4);
                     value = cb.isChecked() ? "true" : "false";
+                }
+            } else if (child instanceof LinearLayout) {
+                String tag = (String) child.getTag();
+                if (tag != null && tag.startsWith("picker_")) {
+                    key = tag.substring(7);
+                    TextInputEditText hiddenEt = null;
+                    for (int j = 0; j < ((LinearLayout) child).getChildCount(); j++) {
+                        android.view.View inner = ((LinearLayout) child).getChildAt(j);
+                        if (inner instanceof TextInputEditText) {
+                            hiddenEt = (TextInputEditText) inner;
+                            break;
+                        }
+                    }
+                    if (hiddenEt != null && hiddenEt.getText() != null) {
+                        value = hiddenEt.getText().toString();
+                    }
                 }
             }
 
