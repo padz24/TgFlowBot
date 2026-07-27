@@ -1955,8 +1955,25 @@ public class MainActivity extends AppCompatActivity {
             try {
                 okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
                 okhttp3.FormBody.Builder formBuilder = new okhttp3.FormBody.Builder();
+                
+                // Ensure media field (photo/video/etc.) is included if present in node properties
+                if (isMedia) {
+                    String mediaField = getMediaFieldName(method.apiName);
+                    String mediaFromNode = node.getProperty(mediaField);
+                    if (mediaFromNode != null && !mediaFromNode.trim().isEmpty()) {
+                        String resolved = resolveTemplate(mediaFromNode, text, chatId, userName);
+                        if (resolved != null && !resolved.trim().isEmpty()) {
+                            formBuilder.add(mediaField, resolved);
+                        }
+                    }
+                }
+                
                 for (Map.Entry<String, String> e : params.entrySet()) {
-                    if (!e.getKey().equals("input_type")) {
+                    if (!e.getKey().equals("input_type") && !e.getKey().equals("photo") 
+                            && !e.getKey().equals("video") && !e.getKey().equals("document")
+                            && !e.getKey().equals("audio") && !e.getKey().equals("voice")
+                            && !e.getKey().equals("video_note") && !e.getKey().equals("animation")
+                            && !e.getKey().equals("sticker") && !e.getKey().equals("thumbnail")) {
                         formBuilder.add(e.getKey(), e.getValue());
                     }
                 }
