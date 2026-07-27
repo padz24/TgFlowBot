@@ -200,12 +200,26 @@ public class NodeEditorActivity extends AppCompatActivity {
 
         if (method == null) return;
 
+        String inputTypeDefault = null;
+        String mediaFieldKey = null;
+        boolean hasInputType = false;
+        java.util.List<ParamDef> pList = method.params;
+        for (int i = 0; i < pList.size(); i++) {
+            if (pList.get(i).name.equals("input_type")) {
+                hasInputType = true;
+                inputTypeDefault = pList.get(i).defaultValue;
+                if (i + 1 < pList.size()) mediaFieldKey = pList.get(i + 1).name;
+                break;
+            }
+        }
+
         boolean hasAny = false;
-        for (ParamDef param : method.params) {
+        for (ParamDef param : pList) {
             if (param.name.equals("chat_id")) continue;
             hasAny = true;
             String key = param.name;
-            String value = saved.containsKey(key) ? saved.get(key) : (param.defaultValue != null ? param.defaultValue : "");
+            String value = saved.containsKey(key) ? saved.get(key)
+                    : (param.defaultValue != null ? param.defaultValue : "");
 
             if (param.type == ParamDef.ParamType.BOOLEAN) {
                 MaterialCheckBox cb = new MaterialCheckBox(this);
@@ -219,6 +233,44 @@ public class NodeEditorActivity extends AppCompatActivity {
                 lp.setMargins(0, m, 0, 0);
                 cb.setLayoutParams(lp);
                 propertiesContainer.addView(cb);
+            } else if (hasInputType && key.equals("input_type")) {
+                TextInputLayout til = new TextInputLayout(this);
+                til.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                til.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+                til.setHint(param.hint + (param.required ? " *" : ""));
+                til.setTag("key_" + key);
+                til.setEndIconMode(TextInputLayout.END_ICON_DROPDOWN_MENU);
+                til.setHelperText("Pilih sumber media");
+
+                com.google.android.material.textfield.MaterialAutoCompleteTextView actv =
+                        new com.google.android.material.textfield.MaterialAutoCompleteTextView(this);
+                actv.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                actv.setInputType(android.text.InputType.TYPE_NULL);
+                actv.setText(value, false);
+                actv.setTag("prop_" + key);
+                String[] options = {"url", "upload"};
+                actv.setAdapter(new android.widget.ArrayAdapter<>(this,
+                        android.R.layout.simple_dropdown_item_1line, options));
+                til.addView(actv);
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                int m = (int) (8 * getResources().getDisplayMetrics().density);
+                lp.setMargins(0, m, 0, 0);
+                til.setLayoutParams(lp);
+                propertiesContainer.addView(til);
+
+                if (mediaFieldKey != null) {
+                    actv.setOnItemClickListener((parent, view, pos, id) -> {
+                        String sel = (String) parent.getItemAtPosition(pos);
+                        setMediaFieldVisibility(mediaFieldKey, "upload".equals(sel));
+                    });
+                }
             } else {
                 TextInputLayout til = new TextInputLayout(this);
                 til.setLayoutParams(new LinearLayout.LayoutParams(
@@ -226,7 +278,11 @@ public class NodeEditorActivity extends AppCompatActivity {
                         LinearLayout.LayoutParams.WRAP_CONTENT));
                 til.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
                 til.setHint(param.hint + (param.required ? " *" : " (opsional)"));
-                til.setTag("key_" + key);
+                if (mediaFieldKey != null && key.equals(mediaFieldKey)) {
+                    til.setTag("media_field_" + key);
+                } else {
+                    til.setTag("key_" + key);
+                }
                 til.setHelperText(param.type.name().toLowerCase() + " — drag or tap variable chips below");
 
                 TextInputEditText et = new TextInputEditText(this);
@@ -262,6 +318,25 @@ public class NodeEditorActivity extends AppCompatActivity {
             tv.setPadding(0, (int) (16 * getResources().getDisplayMetrics().density), 0, 0);
             propertiesContainer.addView(tv);
         }
+
+        if (mediaFieldKey != null) {
+            String inputVal = saved.containsKey("input_type") ? saved.get("input_type")
+                    : (inputTypeDefault != null ? inputTypeDefault : "url");
+            setMediaFieldVisibility(mediaFieldKey, "upload".equals(inputVal));
+        }
+    }
+
+    private void setMediaFieldVisibility(String mediaFieldKey, boolean hide) {
+        for (int i = 0; i < propertiesContainer.getChildCount(); i++) {
+            android.view.View child = propertiesContainer.getChildAt(i);
+            if (child instanceof TextInputLayout) {
+                Object tag = child.getTag();
+                String expectedTag = "media_field_" + mediaFieldKey;
+                if (expectedTag.equals(tag) || (tag instanceof String && ((String) tag).startsWith("media_field_"))) {
+                    child.setVisibility(hide ? android.view.View.GONE : android.view.View.VISIBLE);
+                }
+            }
+        }
     }
 
     private void saveAndExit(boolean delete) {
@@ -274,9 +349,9 @@ public class NodeEditorActivity extends AppCompatActivity {
             if (child instanceof TextInputLayout) {
                 TextInputLayout til = (TextInputLayout) child;
                 String tag = (String) til.getTag();
-                if (tag != null && tag.startsWith("key_")) {
-                    key = tag.substring(4);
-                    TextInputEditText et = (TextInputEditText) til.getEditText();
+                if (tag != null && (tag.startsWith("key_") || tag.startsWith("media_field_"))) {
+                    key = tag.substring(tag.startsWith("media_field_") ? 12 : 4);
+                    android.widget.EditText et = til.getEditText();
                     if (et != null && et.getText() != null) {
                         value = et.getText().toString();
                     }
