@@ -27,6 +27,7 @@ public class NodeEditorActivity extends AppCompatActivity {
     private TelegramMethod method;
     private TextInputEditText etLabel;
     private LinearLayout propertiesContainer;
+    private TextInputEditText lastFocusedEditText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,6 +47,9 @@ public class NodeEditorActivity extends AppCompatActivity {
 
         etLabel = findViewById(R.id.et_label);
         etLabel.setText(nodeLabel);
+        etLabel.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) lastFocusedEditText = (TextInputEditText) v;
+        });
 
         propertiesContainer = findViewById(R.id.properties_container);
 
@@ -62,12 +66,119 @@ public class NodeEditorActivity extends AppCompatActivity {
 
         renderParams(properties);
         updateTitle();
+        buildVariableChips();
 
         MaterialButton btnSave = findViewById(R.id.btn_save);
         btnSave.setOnClickListener(v -> saveAndExit(false));
 
         MaterialButton btnDelete = findViewById(R.id.btn_delete);
         btnDelete.setOnClickListener(v -> saveAndExit(true));
+    }
+
+    private void buildVariableChips() {
+        LinearLayout chipsContainer = findViewById(R.id.variable_chips_container);
+        if (chipsContainer == null) return;
+
+        String[][] variables = {
+            {"{{text}}", "Message text"},
+            {"{{chatId}}", "Chat ID"},
+            {"{{username}}", "Sender username"},
+            {"{{message_id}}", "Message ID"},
+            {"{{result}}", "Last node output (JSON)"},
+            {"{{result.message_id}}", "Sent message ID"},
+            {"{{result.chat.id}}", "Result chat ID"},
+            {"{{result.from.id}}", "Sender user ID"},
+            {"{{error}}", "Last error message"},
+            {"{{$name}}", "Your variable (replace name)"},
+        };
+
+        for (String[] var : variables) {
+            com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(this);
+            chip.setText(var[0]);
+            chip.setClickable(true);
+            chip.setCheckable(false);
+            chip.setTag(var[0]);
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            int m = (int) (4 * getResources().getDisplayMetrics().density);
+            lp.setMargins(0, 0, m, 0);
+            chip.setLayoutParams(lp);
+
+            chip.setOnClickListener(v -> insertPlaceholder((String) v.getTag()));
+
+            chip.setOnLongClickListener(v -> {
+                android.content.ClipData data = android.content.ClipData.newPlainText("variable", (String) v.getTag());
+                android.view.View.DragShadowBuilder shadow = new android.view.View.DragShadowBuilder(v);
+                v.startDragAndDrop(data, shadow, (String) v.getTag(), 0);
+                return true;
+            });
+
+            chipsContainer.addView(chip);
+        }
+    }
+
+    private void insertPlaceholder(String placeholder) {
+        TextInputEditText target = lastFocusedEditText;
+        if (target == null) {
+            if (propertiesContainer.getChildCount() > 0) {
+                for (int i = 0; i < propertiesContainer.getChildCount(); i++) {
+                    android.view.View child = propertiesContainer.getChildAt(i);
+                    if (child instanceof TextInputLayout) {
+                        TextInputEditText et = (TextInputEditText) ((TextInputLayout) child).getEditText();
+                        if (et != null) { target = et; break; }
+                    }
+                }
+            }
+            if (target == null) return;
+        }
+        int pos = target.getSelectionStart();
+        if (pos < 0) pos = target.getText() != null ? target.getText().length() : 0;
+        String current = target.getText() != null ? target.getText().toString() : "";
+        String before = current.substring(0, pos);
+        String after = current.substring(pos);
+        target.setText(before + placeholder + after);
+        target.setSelection(pos + placeholder.length());
+        target.requestFocus();
+    }
+
+    private void setupDragAndDropForEditText(TextInputEditText et) {
+        et.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) lastFocusedEditText = (TextInputEditText) v;
+        });
+        et.setOnDragListener((v, event) -> {
+            switch (event.getAction()) {
+                case android.view.DragEvent.ACTION_DRAG_STARTED:
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_ENTERED:
+                    v.setAlpha(0.6f);
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_EXITED:
+                    v.setAlpha(1.0f);
+                    return true;
+                case android.view.DragEvent.ACTION_DROP: {
+                    android.content.ClipData clipData = event.getClipData();
+                    if (clipData != null && clipData.getItemCount() > 0) {
+                        String placeholder = clipData.getItemAt(0).getText().toString();
+                        TextInputEditText editText = (TextInputEditText) v;
+                        int pos = editText.getSelectionStart();
+                        if (pos < 0) pos = editText.getText() != null ? editText.getText().length() : 0;
+                        String current = editText.getText() != null ? editText.getText().toString() : "";
+                        String before = current.substring(0, pos);
+                        String after = current.substring(pos);
+                        editText.setText(before + placeholder + after);
+                        editText.setSelection(pos + placeholder.length());
+                    }
+                    v.setAlpha(1.0f);
+                    return true;
+                }
+                case android.view.DragEvent.ACTION_DRAG_ENDED:
+                    v.setAlpha(1.0f);
+                    return true;
+            }
+            return false;
+        });
     }
 
     private TelegramMethod findMethod(String name) {
@@ -116,7 +227,7 @@ public class NodeEditorActivity extends AppCompatActivity {
                 til.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
                 til.setHint(param.hint + (param.required ? " *" : " (opsional)"));
                 til.setTag("key_" + key);
-                til.setHelperText(param.type.name().toLowerCase());
+                til.setHelperText(param.type.name().toLowerCase() + " — drag or tap variable chips below");
 
                 TextInputEditText et = new TextInputEditText(this);
                 et.setLayoutParams(new LinearLayout.LayoutParams(
@@ -131,6 +242,7 @@ public class NodeEditorActivity extends AppCompatActivity {
                             android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
                 }
 
+                setupDragAndDropForEditText(et);
                 til.addView(et);
 
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(

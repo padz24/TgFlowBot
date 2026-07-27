@@ -45,6 +45,36 @@
         android:layout_height="wrap_content"
         android:orientation="vertical" />
 
+      <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="Available Variables"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textColor="?attr/colorPrimary" />
+
+      <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+
+        <LinearLayout
+          android:id="@+id/variable_chips_container"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:orientation="horizontal" />
+
+      </HorizontalScrollView>
+
+      <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Long-press a variable and drag it into any field above, or tap to insert at cursor."
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorSecondary" />
+
     </LinearLayout>
 
   </ScrollView>

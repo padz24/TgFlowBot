@@ -167,14 +167,17 @@ public class MainActivity extends AppCompatActivity {
 
     private void loadAndRegisterExtensions() {
         Set<String> installed = loadInstalledPackageIds();
+        List<ExtensionModule> marketplace = ExtensionModule.getMarketplaceExtensions();
         if (installed.isEmpty()) {
-            installed.add("com.tgflowbot.ext.core");
-            installed.add("com.tgflowbot.ext.triggers");
-            installed.add("com.tgflowbot.ext.conditions");
+            // First run: auto-install every bundled extension so all nodes
+            // are available out of the box. Users can still remove any of
+            // them later from the Extension Marketplace.
+            for (ExtensionModule ext : marketplace) {
+                installed.add(ext.packageId);
+            }
             saveInstalledPackageIds(installed);
         }
         MethodRegistry.clearExtensions();
-        List<ExtensionModule> marketplace = ExtensionModule.getMarketplaceExtensions();
         for (ExtensionModule ext : marketplace) {
             if (installed.contains(ext.packageId)) {
                 MethodRegistry.registerExtension(ext);
@@ -801,36 +804,7 @@ public class MainActivity extends AppCompatActivity {
                                     result.get(i).getAsJsonObject();
                             int updateId = update.get("update_id").getAsInt();
                             if (updateId >= maxId) maxId = updateId + 1;
-
-                            com.google.gson.JsonObject message =
-                                    update.getAsJsonObject("message");
-                            if (message != null) {
-                                Map<String, String> msgData = new HashMap<>();
-                                flattenJson("", message, msgData);
-                                currentMsgData = msgData;
-
-                                String chatId = msgData.get("chat.id");
-                                String text = msgData.containsKey("text") ? msgData.get("text") : "";
-                                String userName = msgData.containsKey("from.username")
-                                        ? msgData.get("from.username")
-                                        : msgData.getOrDefault("from.first_name", "");
-
-                                lastChatId = chatId;
-                                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                                        .edit()
-                                        .putString("last_chat_id", chatId)
-                                        .putInt("update_offset", maxId)
-                                        .apply();
-
-                                String finalText = text;
-                                String finalUser = userName;
-                                runOnUiThread(() -> {
-                                    Snackbar.make(canvas,
-                                            "Pesan dari " + chatId + ": " + finalText,
-                                            Snackbar.LENGTH_LONG).show();
-                                    processIncomingMessage(chatId, finalUser, finalText);
-                                });
-                            }
+                            processTelegramUpdate(update, maxId);
                         }
                         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                                 .edit().putInt("update_offset", maxId).apply();
@@ -852,7 +826,79 @@ public class MainActivity extends AppCompatActivity {
 
     private void processIncomingMessage(String chatId, String userName, String text) {
         addLog("Pesan dari " + (userName.isEmpty() ? chatId : userName) + ": " + text);
+        processTriggerByType("_on_message", chatId, userName, text);
+    }
 
+    private void processTelegramUpdate(com.google.gson.JsonObject update, int maxId) {
+        String[][] updateTypes = {
+            {"message", "_on_message"},
+            {"edited_message", "_on_edited_message"},
+            {"channel_post", "_on_channel_post"},
+            {"callback_query", "_on_callback_query"},
+            {"inline_query", "_on_inline_query"},
+            {"chosen_inline_result", "_on_chosen_inline_result"},
+            {"chat_member", "_on_chat_member"},
+            {"my_chat_member", "_on_my_chat_member"},
+            {"chat_join_request", "_on_chat_join_request"},
+            {"poll", "_on_poll"},
+            {"poll_answer", "_on_poll_answer"},
+            {"pre_checkout_query", "_on_pre_checkout_query"},
+            {"shipping_query", "_on_shipping_query"},
+        };
+
+        for (String[] ut : updateTypes) {
+            String fieldName = ut[0];
+            String triggerName = ut[1];
+            if (update.has(fieldName) && !update.get(fieldName).isJsonNull()) {
+                com.google.gson.JsonObject data = update.getAsJsonObject(fieldName);
+                Map<String, String> msgData = new HashMap<>();
+                flattenJson("", data, msgData);
+                msgData.put("update_type", fieldName);
+                msgData.put("trigger_type", triggerName);
+                currentMsgData = msgData;
+
+                String chatId = msgData.containsKey("chat.id") ? msgData.get("chat.id") : "";
+                String text = msgData.get("text");
+                if (text == null) {
+                    String[] textFields = {"data", "query", "inline_query", "chosen_inline_result"};
+                    for (String tf : textFields) {
+                        if (msgData.containsKey(tf)) { text = msgData.get(tf); break; }
+                    }
+                }
+                if (text == null) text = "";
+                String userName = msgData.containsKey("from.username")
+                        ? msgData.get("from.username")
+                        : msgData.getOrDefault("from.first_name", "");
+                if (chatId.isEmpty()) chatId = lastChatId != null ? lastChatId : "0";
+
+                if ("message".equals(fieldName) && chatId.isEmpty()) {
+                    String cId = msgData.get("chat.id");
+                    if (cId != null) chatId = cId;
+                }
+
+                lastChatId = chatId;
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                        .edit()
+                        .putString("last_chat_id", chatId)
+                        .putInt("update_offset", maxId)
+                        .apply();
+
+                String finalChatId = chatId;
+                String finalText = text;
+                String finalUser = userName;
+                String finalTrigger = triggerName;
+                runOnUiThread(() -> {
+                    String logMsg = "Update " + fieldName + " dari " + finalChatId;
+                    if (!finalText.isEmpty()) logMsg += ": " + finalText;
+                    addLog("[Trigger] " + logMsg);
+                    processTriggerByType(finalTrigger, finalChatId, finalUser, finalText);
+                });
+                return;
+            }
+        }
+    }
+
+    private void processTriggerByType(String triggerMethod, String chatId, String userName, String text) {
         for (FlowNode node : workflow.getNodes()) {
             if (node.getType() == NodeType.TRIGGER) {
                 String methodName = node.getProperty("_method");
@@ -860,21 +906,119 @@ public class MainActivity extends AppCompatActivity {
                     TelegramMethod m = findMethodByLabel(node.getLabel());
                     if (m != null) methodName = m.apiName;
                 }
-                String command = resolveTemplate(node.getProperty("command"), text, chatId, userName);
-                String filter = resolveTemplate(node.getProperty("filter"), text, chatId, userName);
+                if (methodName == null) continue;
 
-                boolean match = true;
-                if ("_on_listening".equals(methodName)) {
-                    match = true;
-                } else if (command != null && !command.isEmpty()) {
-                    match = text.startsWith(command);
-                }
-                if (match && filter != null && !filter.isEmpty()) {
-                    match = text.contains(filter);
+                boolean match = false;
+                switch (methodName) {
+                    case "_on_message":
+                        match = "_on_message".equals(triggerMethod) || "_on_edited_message".equals(triggerMethod);
+                        if (match) {
+                            String command = resolveTemplate(node.getProperty("command"), text, chatId, userName);
+                            String filter = resolveTemplate(node.getProperty("filter"), text, chatId, userName);
+                            if (command != null && !command.isEmpty()) match = text.startsWith(command);
+                            if (match && filter != null && !filter.isEmpty()) match = text.contains(filter);
+                        }
+                        break;
+                    case "_on_photo":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("photo");
+                        break;
+                    case "_on_video":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("video");
+                        break;
+                    case "_on_document":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("document");
+                        break;
+                    case "_on_audio":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("audio");
+                        break;
+                    case "_on_voice":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("voice");
+                        break;
+                    case "_on_animation":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("animation");
+                        break;
+                    case "_on_sticker":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("sticker");
+                        break;
+                    case "_on_location":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("location");
+                        break;
+                    case "_on_contact":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("contact");
+                        break;
+                    case "_on_poll":
+                        match = "_on_message".equals(triggerMethod) && currentMsgData.containsKey("poll");
+                        break;
+                    case "_on_edited_message":
+                        match = "_on_edited_message".equals(triggerMethod);
+                        break;
+                    case "_on_channel_post":
+                        match = "_on_channel_post".equals(triggerMethod);
+                        break;
+                    case "_on_callback_query":
+                        match = "_on_callback_query".equals(triggerMethod);
+                        if (match) {
+                            String dataFilter = node.getProperty("data");
+                            if (dataFilter != null && !dataFilter.isEmpty()) {
+                                String callbackData = currentMsgData.get("data");
+                                match = callbackData != null && callbackData.contains(dataFilter);
+                            }
+                        }
+                        break;
+                    case "_on_inline_query":
+                        match = "_on_inline_query".equals(triggerMethod);
+                        if (match) {
+                            String queryFilter = node.getProperty("query");
+                            if (queryFilter != null && !queryFilter.isEmpty()) {
+                                String queryText = currentMsgData.get("query");
+                                match = queryText != null && queryText.contains(queryFilter);
+                            }
+                        }
+                        break;
+                    case "_on_chosen_inline_result":
+                        match = "_on_chosen_inline_result".equals(triggerMethod);
+                        break;
+                    case "_on_chat_member":
+                        match = "_on_chat_member".equals(triggerMethod);
+                        if (match) {
+                            String statusFilter = node.getProperty("status");
+                            if (statusFilter != null && !statusFilter.isEmpty()) {
+                                String newStatus = currentMsgData.get("new_chat_member.status");
+                                match = newStatus != null && newStatus.equals(statusFilter);
+                            }
+                        }
+                        break;
+                    case "_on_my_chat_member":
+                        match = "_on_my_chat_member".equals(triggerMethod);
+                        break;
+                    case "_on_chat_join_request":
+                        match = "_on_chat_join_request".equals(triggerMethod);
+                        break;
+                    case "_on_poll_answer":
+                        match = "_on_poll_answer".equals(triggerMethod);
+                        break;
+                    case "_on_pre_checkout_query":
+                        match = "_on_pre_checkout_query".equals(triggerMethod);
+                        break;
+                    case "_on_shipping_query":
+                        match = "_on_shipping_query".equals(triggerMethod);
+                        break;
+                    case "_on_listening":
+                        match = "_on_listening".equals(triggerMethod);
+                        break;
+                    case "_on_schedule":
+                    case "_on_interval":
+                    case "_on_http_poll":
+                    case "_on_webhook":
+                    case "_on_manual":
+                        match = methodName.equals(triggerMethod);
+                        break;
+                    default:
+                        match = false;
                 }
 
                 if (match) {
-                    addLog("Trigger '" + node.getLabel() + "' cocok, menjalankan flow");
+                    addLog("Trigger '" + node.getLabel() + "' cocok (" + methodName + "), menjalankan flow");
                     processFlowFromNode(node, chatId, userName, text);
                 }
             }
@@ -1219,12 +1363,97 @@ public class MainActivity extends AppCompatActivity {
                     String raw = msg != null && !msg.trim().isEmpty() ? msg : text;
                     final String logged = resolveTemplate(raw, text, chatId, userName);
                     addLog(logged);
-                    runOnUiThread(() -> Snackbar.make(canvas,
-                            "Log: " + logged, Snackbar.LENGTH_SHORT).show());
+                    currentMsgData.put("result", logged);
+                    runOnUiThread(() -> {
+                        Snackbar.make(canvas, "Log: " + logged, Snackbar.LENGTH_SHORT).show();
+                        continueFlow(node, chatId, userName, logged);
+                    });
                 } else if ("ai_chat".equals(methodName)) {
                     execAiChat(node, chatId, userName, text);
                 } else if ("_return".equals(methodName)) {
                     addLog("Return: flow berhenti");
+                    currentMsgData.put("result", "");
+                } else if ("reply".equals(methodName)) {
+                    String replyText = resolveTemplate(node.getProperty("text"), text, chatId, userName);
+                    String parseMode = node.getProperty("parse_mode");
+                    Map<String, String> replyParams = new HashMap<>();
+                    replyParams.put("chat_id", chatId);
+                    replyParams.put("text", replyText != null ? replyText : "");
+                    String origMsgId = currentMsgData.get("message_id");
+                    if (origMsgId != null && !origMsgId.isEmpty()) {
+                        replyParams.put("reply_to_message_id", origMsgId);
+                    }
+                    if (parseMode != null && !parseMode.trim().isEmpty()) {
+                        replyParams.put("parse_mode", parseMode);
+                    }
+                    TelegramMethod sendMessageMethod = findMethodDef("sendMessage");
+                    if (sendMessageMethod == null) {
+                        sendMessageMethod = new TelegramMethod("sendMessage", "Send Message", "Kirim pesan teks", NodeType.ACTION);
+                    }
+                    execApiCall(token, sendMessageMethod, replyParams, node, chatId, userName, text);
+                } else if ("_output_delete".equals(methodName)) {
+                    String origMsgId = currentMsgData.get("message_id");
+                    if (origMsgId != null && !origMsgId.isEmpty()) {
+                        Map<String, String> delParams = new HashMap<>();
+                        delParams.put("chat_id", chatId);
+                        delParams.put("message_id", origMsgId);
+                        TelegramMethod delMethod = findMethodDef("deleteMessage");
+                        if (delMethod == null) {
+                            delMethod = new TelegramMethod("deleteMessage", "Delete Message", "Hapus pesan", NodeType.ACTION);
+                        }
+                        execApiCall(token, delMethod, delParams, node, chatId, userName, text);
+                    } else {
+                        runOnUiThread(() -> Snackbar.make(canvas, "Tidak ada pesan untuk dihapus", Snackbar.LENGTH_SHORT).show());
+                    }
+                } else if ("_output_pin".equals(methodName)) {
+                    String origMsgId = currentMsgData.get("message_id");
+                    if (origMsgId != null && !origMsgId.isEmpty()) {
+                        Map<String, String> pinParams = new HashMap<>();
+                        pinParams.put("chat_id", chatId);
+                        pinParams.put("message_id", origMsgId);
+                        TelegramMethod pinMethod = findMethodDef("pinChatMessage");
+                        if (pinMethod == null) {
+                            pinMethod = new TelegramMethod("pinChatMessage", "Pin Message", "Sematkan pesan", NodeType.ACTION);
+                        }
+                        execApiCall(token, pinMethod, pinParams, node, chatId, userName, text);
+                    } else {
+                        runOnUiThread(() -> Snackbar.make(canvas, "Tidak ada pesan untuk disematkan", Snackbar.LENGTH_SHORT).show());
+                    }
+                } else if ("_output_kick".equals(methodName)) {
+                    String userId = currentMsgData.get("from.id");
+                    String untilDate = node.getProperty("until_date");
+                    if (userId != null && !userId.isEmpty()) {
+                        Map<String, String> banParams = new HashMap<>();
+                        banParams.put("chat_id", chatId);
+                        banParams.put("user_id", userId);
+                        if (untilDate != null && !untilDate.isEmpty()) {
+                            banParams.put("until_date", untilDate);
+                        }
+                        TelegramMethod banMethod = findMethodDef("banChatMember");
+                        if (banMethod == null) {
+                            banMethod = new TelegramMethod("banChatMember", "Ban User", "Blokir anggota", NodeType.ACTION);
+                        }
+                        execApiCall(token, banMethod, banParams, node, chatId, userName, text);
+                    } else {
+                        runOnUiThread(() -> Snackbar.make(canvas, "Tidak ada user untuk ditendang", Snackbar.LENGTH_SHORT).show());
+                    }
+                } else if ("forward".equals(methodName)) {
+                    String targetChatId = resolveTemplate(node.getProperty("target_chat_id"), text, chatId, userName);
+                    String origMsgId = currentMsgData.get("message_id");
+                    if (targetChatId != null && !targetChatId.trim().isEmpty() && origMsgId != null) {
+                        Map<String, String> fwdParams = new HashMap<>();
+                        fwdParams.put("chat_id", targetChatId);
+                        fwdParams.put("from_chat_id", chatId);
+                        fwdParams.put("message_id", origMsgId);
+                        TelegramMethod forwardMethodDef = findMethodDef("forwardMessage");
+                        if (forwardMethodDef == null) {
+                            forwardMethodDef = new TelegramMethod("forwardMessage", "Forward Message", "Forward pesan", NodeType.ACTION);
+                        }
+                        execApiCall(token, forwardMethodDef, fwdParams, node, chatId, userName, text);
+                    } else {
+                        runOnUiThread(() -> Snackbar.make(canvas,
+                                "Forward gagal: target_chat_id kosong atau tidak ada pesan masuk", Snackbar.LENGTH_SHORT).show());
+                    }
                 } else if (methodName != null && methodName.startsWith("_phone_")) {
                     execPhoneAction(node, method, chatId, userName, text);
                 } else if (methodName != null && methodName.startsWith("_")) {
@@ -1244,7 +1473,7 @@ public class MainActivity extends AppCompatActivity {
                     if (!params.containsKey("chat_id") || params.get("chat_id").trim().isEmpty()) {
                         params.put("chat_id", chatId);
                     }
-                    execApiCall(token, method, params);
+                    execApiCall(token, method, params, node, chatId, userName, text);
                 }
                 break;
             }
@@ -1310,6 +1539,34 @@ public class MainActivity extends AppCompatActivity {
         final String cId = chatId;
         final String uName = userName;
 
+        String useToolsRaw = node.getProperty("use_phone_tools");
+        boolean useTools = "true".equalsIgnoreCase(useToolsRaw);
+
+        if (!useTools) {
+            AiChatHelper.chat(provider, apiKey, prompt, model, systemPrompt,
+                    temperature, maxTokens, customEndpoint,
+                    new AiChatHelper.AiCallback() {
+                @Override
+                public void onSuccess(String responseText) {
+                    addLog("AI: " + responseText);
+                    currentMsgData.put("result", responseText);
+                    runOnUiThread(() -> {
+                        Snackbar.make(canvas, "AI: " + responseText,
+                                Snackbar.LENGTH_LONG).show();
+                        canvas.triggerPulse();
+                        continueFlow(node, cId, uName, responseText);
+                    });
+                }
+
+                @Override
+                public void onError(String error) {
+                    runOnUiThread(() -> Snackbar.make(canvas,
+                            "AI Error: " + error, Snackbar.LENGTH_LONG).show());
+                }
+            });
+            return;
+        }
+
         List<AiChatHelper.ToolDefinition> toolDefs = buildAiToolDefs();
         List<String> history = new ArrayList<>();
 
@@ -1318,7 +1575,6 @@ public class MainActivity extends AppCompatActivity {
                 new AiChatHelper.AiToolCallback() {
             @Override
             public void onToolCalls(List<AiChatHelper.ToolCall> calls, Runnable retry) {
-                // Execute only the first/relevant tool call instead of all
                 for (AiChatHelper.ToolCall call : calls) {
                     JsonObject asstMsg = new JsonObject();
                     asstMsg.addProperty("role", "assistant");
@@ -1342,8 +1598,7 @@ public class MainActivity extends AppCompatActivity {
                     toolMsg.addProperty("tool_call_id", call.id);
                     toolMsg.addProperty("content", result != null ? result : "ok");
                     history.add(toolMsg.toString());
-                    
-                    // Break after executing the first tool call
+
                     break;
                 }
 
@@ -1355,6 +1610,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onSuccess(String responseText) {
                 addLog("AI: " + responseText);
+                currentMsgData.put("result", responseText);
                 runOnUiThread(() -> {
                     Snackbar.make(canvas, "AI: " + responseText,
                             Snackbar.LENGTH_LONG).show();
@@ -1565,7 +1821,35 @@ public class MainActivity extends AppCompatActivity {
                 return type != null && type.equals(node.getProperty("_chat_type"));
             }
             case "hasMedia": {
-                return mediaType != null && !mediaType.isEmpty();
+                if (mediaType == null || mediaType.isEmpty()) {
+                    return currentMsgData.containsKey("photo") || currentMsgData.containsKey("video")
+                            || currentMsgData.containsKey("document") || currentMsgData.containsKey("audio")
+                            || currentMsgData.containsKey("voice") || currentMsgData.containsKey("animation")
+                            || currentMsgData.containsKey("sticker") || currentMsgData.containsKey("location")
+                            || currentMsgData.containsKey("contact") || currentMsgData.containsKey("poll");
+                }
+                return currentMsgData.containsKey(mediaType);
+            }
+            case "hasPhoto": return currentMsgData.containsKey("photo");
+            case "hasVideo": return currentMsgData.containsKey("video");
+            case "hasDocument": return currentMsgData.containsKey("document");
+            case "hasAudio": return currentMsgData.containsKey("audio");
+            case "hasVoice": return currentMsgData.containsKey("voice");
+            case "hasAnimation": return currentMsgData.containsKey("animation");
+            case "hasSticker": return currentMsgData.containsKey("sticker");
+            case "hasLocation": return currentMsgData.containsKey("location");
+            case "hasContact": return currentMsgData.containsKey("contact");
+            case "hasPoll": return currentMsgData.containsKey("poll");
+            case "hasDice": return currentMsgData.containsKey("dice");
+            case "isForwarded": return currentMsgData.containsKey("forward_from") || currentMsgData.containsKey("forward_origin");
+            case "isReply": return currentMsgData.containsKey("reply_to_message");
+            case "isBot": {
+                String isBot = currentMsgData.get("from.is_bot");
+                return "true".equals(isBot);
+            }
+            case "isCommand": return text != null && text.startsWith("/");
+            case "isAdmin": {
+                return currentMsgData.containsKey("from.is_admin") && "true".equals(currentMsgData.get("from.is_admin"));
             }
             case "alwaysTrue": {
                 return true;
@@ -1595,14 +1879,15 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void execApiCall(String token, TelegramMethod method, Map<String, String> params) {
+    private void execApiCall(String token, TelegramMethod method, Map<String, String> params,
+                             FlowNode node, String chatId, String userName, String text) {
         String inputType = params.get("input_type");
         boolean isUpload = "upload".equals(inputType);
-        String[] mediaMethods = {"sendPhoto", "sendVideo", "sendDocument", "sendAudio", "sendVoice", "sendAnimation"};
+        String[] mediaMethods = {"sendPhoto", "sendVideo", "sendDocument", "sendAudio", "sendVoice", "sendVideoNote", "sendAnimation", "sendSticker", "setChatPhoto", "setStickerSetThumbnail", "uploadStickerFile"};
         boolean isMedia = java.util.Arrays.asList(mediaMethods).contains(method.apiName);
         
         if (isUpload && isMedia) {
-            pickFileAndUpload(token, method, params);
+            pickFileAndUpload(token, method, params, node, chatId, userName, text);
             return;
         }
         
@@ -1621,48 +1906,71 @@ public class MainActivity extends AppCompatActivity {
                 okhttp3.Response response = client.newCall(request).execute();
                 String body = response.body() != null ? response.body().string() : "";
                 response.close();
-                handleApiResponse(method, body);
+                handleApiResponse(method, body, node, chatId, userName, text);
             } catch (Exception e) {
-                runOnUiThread(() -> Snackbar.make(canvas,
-                        "Error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+                String errMsg = e.getMessage();
+                runOnUiThread(() -> {
+                    Snackbar.make(canvas, "Error: " + errMsg, Snackbar.LENGTH_SHORT).show();
+                    addLog("[API Error] " + method.apiName + ": " + errMsg);
+                });
             }
         }).start();
     }
     
-    private void handleApiResponse(TelegramMethod method, String body) {
+    private void handleApiResponse(TelegramMethod method, String body,
+                                   FlowNode node, String chatId, String userName, String text) {
         try {
             com.google.gson.JsonObject json =
                     new com.google.gson.JsonParser().parse(body).getAsJsonObject();
             if (json.get("ok").getAsBoolean()) {
-                if (method.apiName.equals("getChat") || method.apiName.equals("getMe")) {
-                    final String result = json.get("result").toString();
-                    addLog("[API] " + method.apiName + ": " + result);
+                String resultStr = json.has("result") ? json.get("result").toString() : "{}";
+                addLog("[API] " + method.apiName + ": " + resultStr);
+                currentMsgData.put("result", resultStr);
+                com.google.gson.JsonElement resultEl = json.get("result");
+                if (resultEl != null) {
+                    flattenJsonTo("result", resultEl, currentMsgData);
                 }
                 runOnUiThread(() -> {
                     canvas.triggerPulse();
-                    Snackbar.make(canvas,
-                            method.displayName + " berhasil", Snackbar.LENGTH_SHORT).show();
+                    Snackbar.make(canvas, method.displayName + " berhasil", Snackbar.LENGTH_SHORT).show();
+                    continueFlow(node, chatId, userName, resultStr);
                 });
             } else {
                 String desc = json.has("description") ?
                         json.get("description").getAsString() : "Unknown error";
-                runOnUiThread(() -> Snackbar.make(canvas,
-                        "Gagal: " + desc, Snackbar.LENGTH_SHORT).show());
+                currentMsgData.put("error", desc);
+                runOnUiThread(() -> {
+                    Snackbar.make(canvas, "Gagal: " + desc, Snackbar.LENGTH_SHORT).show();
+                    addLog("[API Error] " + method.apiName + ": " + desc);
+                });
             }
         } catch (Exception e) {
-            runOnUiThread(() -> Snackbar.make(canvas,
-                    "Error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+            runOnUiThread(() -> {
+                Snackbar.make(canvas, "Error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show();
+                addLog("[API Error] " + method.apiName + ": " + e.getMessage());
+            });
         }
     }
 
-    private void pickFileAndUpload(String token, TelegramMethod method, Map<String, String> params) {
+    private FlowNode fileUploadNode;
+    private String fileUploadChatId;
+    private String fileUploadUserName;
+    private String fileUploadText;
+
+    private void pickFileAndUpload(String token, TelegramMethod method, Map<String, String> params,
+                                   FlowNode node, String chatId, String userName, String text) {
         String acceptType;
         switch (method.apiName) {
             case "sendPhoto": acceptType = "image/*"; break;
             case "sendVideo": acceptType = "video/*"; break;
             case "sendAudio": acceptType = "audio/*"; break;
             case "sendVoice": acceptType = "audio/*"; break;
+            case "sendVideoNote": acceptType = "video/*"; break;
             case "sendAnimation": acceptType = "image/gif"; break;
+            case "sendSticker": acceptType = "image/webp"; break;
+            case "setChatPhoto": acceptType = "image/*"; break;
+            case "setStickerSetThumbnail": acceptType = "image/*"; break;
+            case "uploadStickerFile": acceptType = "image/*"; break;
             case "sendDocument": acceptType = "*/*"; break;
             default: acceptType = "*/*";
         }
@@ -1673,6 +1981,10 @@ public class MainActivity extends AppCompatActivity {
             fileUploadParams = params;
             fileUploadToken = token;
             fileUploadMethod = method;
+            fileUploadNode = node;
+            fileUploadChatId = chatId;
+            fileUploadUserName = userName;
+            fileUploadText = text;
             startActivityForResult(intent, REQUEST_PICK_FILE);
         });
     }
@@ -1683,6 +1995,12 @@ public class MainActivity extends AppCompatActivity {
     private TelegramMethod fileUploadMethod;
 
     private void uploadFileWithUri(Uri uri) {
+        final FlowNode node = fileUploadNode;
+        final String chatId = fileUploadChatId;
+        final String userName = fileUploadUserName;
+        final String text = fileUploadText;
+        final TelegramMethod method = fileUploadMethod;
+
         new Thread(() -> {
             try {
                 okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
@@ -1697,7 +2015,7 @@ public class MainActivity extends AppCompatActivity {
                 String mimeType = getContentResolver().getType(uri);
                 if (mimeType == null) mimeType = "application/octet-stream";
 
-                String fieldName = getMediaFieldName(fileUploadMethod.apiName);
+                String fieldName = getMediaFieldName(method.apiName);
                 okhttp3.RequestBody fileBody = okhttp3.RequestBody.create(fileBytes, okhttp3.MediaType.parse(mimeType));
                 okhttp3.MultipartBody.Builder mpBuilder = new okhttp3.MultipartBody.Builder()
                         .setType(okhttp3.MultipartBody.FORM)
@@ -1709,16 +2027,18 @@ public class MainActivity extends AppCompatActivity {
                     mpBuilder.addFormDataPart(key, e.getValue());
                 }
 
-                String url = "https://api.telegram.org/bot" + fileUploadToken + "/" + fileUploadMethod.apiName;
+                String url = "https://api.telegram.org/bot" + fileUploadToken + "/" + method.apiName;
                 okhttp3.Request request = new okhttp3.Request.Builder()
                         .url(url).post(mpBuilder.build()).build();
                 okhttp3.Response response = client.newCall(request).execute();
                 String body = response.body() != null ? response.body().string() : "";
                 response.close();
-                handleApiResponse(fileUploadMethod, body);
+                handleApiResponse(method, body, node, chatId, userName, text);
             } catch (Exception e) {
-                runOnUiThread(() -> Snackbar.make(canvas,
-                        "Upload error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    Snackbar.make(canvas, "Upload error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show();
+                    addLog("[Upload Error] " + method.apiName + ": " + e.getMessage());
+                });
             }
         }).start();
     }
@@ -1753,41 +2073,70 @@ public class MainActivity extends AppCompatActivity {
             case "sendDocument": return "document";
             case "sendAudio": return "audio";
             case "sendVoice": return "voice";
+            case "sendVideoNote": return "video_note";
             case "sendAnimation": return "animation";
+            case "sendSticker": return "sticker";
+            case "setChatPhoto": return "photo";
+            case "setStickerSetThumbnail": return "thumbnail";
+            case "uploadStickerFile": return "sticker";
             default: return "document";
         }
     }
 
     private void flattenJson(String prefix, com.google.gson.JsonObject obj, Map<String, String> out) {
-        for (java.util.Map.Entry<String, com.google.gson.JsonElement> e : obj.entrySet()) {
-            String key = prefix != null && !prefix.isEmpty() ? prefix + "." + e.getKey() : e.getKey();
-            com.google.gson.JsonElement val = e.getValue();
-            if (val.isJsonPrimitive()) {
-                out.put(key, val.getAsString());
-            } else if (val.isJsonObject()) {
-                flattenJson(key, val.getAsJsonObject(), out);
+        flattenJsonTo(prefix, obj, out);
+    }
+
+    private void flattenJsonTo(String prefix, com.google.gson.JsonElement el, Map<String, String> out) {
+        if (el.isJsonObject()) {
+            com.google.gson.JsonObject obj = el.getAsJsonObject();
+            for (java.util.Map.Entry<String, com.google.gson.JsonElement> e : obj.entrySet()) {
+                String key = prefix != null && !prefix.isEmpty() ? prefix + "." + e.getKey() : e.getKey();
+                flattenJsonTo(key, e.getValue(), out);
             }
+        } else if (el.isJsonArray()) {
+            com.google.gson.JsonArray arr = el.getAsJsonArray();
+            out.put(prefix, arr.toString());
+            for (int i = 0; i < arr.size(); i++) {
+                String key = prefix + "." + i;
+                flattenJsonTo(key, arr.get(i), out);
+            }
+        } else if (el.isJsonPrimitive()) {
+            out.put(prefix, el.getAsString());
+        } else if (el.isJsonNull()) {
+            out.put(prefix, "");
         }
     }
 
     private String resolveTemplate(String val, String text, String chatId, String userName) {
         if (val == null) return null;
+        if (!val.contains("{{")) return val;
         val = val.replace("{{text}}", text != null ? text : "");
         val = val.replace("{{message}}", text != null ? text : "");
         val = val.replace("{{chatId}}", chatId != null ? chatId : "");
         val = val.replace("{{username}}", userName != null ? userName : "");
-        for (java.util.Map.Entry<String, String> e : currentMsgData.entrySet()) {
+
+        java.util.List<java.util.Map.Entry<String, String>> sortedData =
+                new java.util.ArrayList<>(currentMsgData.entrySet());
+        sortedData.sort((a, b) -> Integer.compare(b.getKey().length(), a.getKey().length()));
+        for (java.util.Map.Entry<String, String> e : sortedData) {
             String placeholder = "{{" + e.getKey() + "}}";
             if (val.contains(placeholder)) {
                 val = val.replace(placeholder, e.getValue() != null ? e.getValue() : "");
             }
         }
-        for (java.util.Map.Entry<String, String> e : variables.entrySet()) {
+
+        java.util.List<java.util.Map.Entry<String, String>> sortedVars =
+                new java.util.ArrayList<>(variables.entrySet());
+        sortedVars.sort((a, b) -> Integer.compare(b.getKey().length(), a.getKey().length()));
+        for (java.util.Map.Entry<String, String> e : sortedVars) {
             String placeholder = "{{$" + e.getKey() + "}}";
             if (val.contains(placeholder)) {
                 val = val.replace(placeholder, e.getValue() != null ? e.getValue() : "");
             }
         }
+
+        val = val.replaceAll("\\{\\{\\s*\\$?[\\w.]+\\s*\\}\\}", "");
         return val;
     }
 
@@ -2303,6 +2652,7 @@ public class MainActivity extends AppCompatActivity {
             }
 
             final String finalResult = result;
+            currentMsgData.put("result", finalResult);
             runOnUiThread(() -> {
                 canvas.triggerPulse();
                 continueFlow(node, chatId, userName, finalResult);
