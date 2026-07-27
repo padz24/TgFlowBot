@@ -1937,6 +1937,12 @@ public class MainActivity extends AppCompatActivity {
         boolean isMedia = java.util.Arrays.asList(mediaMethods).contains(method.apiName);
         
         if (isUpload && isMedia) {
+            String mediaField = getMediaFieldName(method.apiName);
+            String mediaUriString = params.get(mediaField);
+            if (mediaUriString != null && !mediaUriString.trim().isEmpty()) {
+                new Thread(() -> uploadFileWithUriString(mediaUriString, token, method, params, node, chatId, userName, text)).start();
+                return;
+            }
             pickFileAndUpload(token, method, params, node, chatId, userName, text);
             return;
         }
@@ -2091,6 +2097,48 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
         }).start();
+    }
+
+    private void uploadFileWithUriString(String uriString, String token, TelegramMethod method,
+                                         Map<String, String> params, FlowNode node,
+                                         String chatId, String userName, String text) {
+        try {
+            android.net.Uri uri = android.net.Uri.parse(uriString);
+            okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+            java.io.InputStream is = getContentResolver().openInputStream(uri);
+            if (is == null) {
+                runOnUiThread(() -> Snackbar.make(canvas, "Gagal baca file: " + uriString, Snackbar.LENGTH_SHORT).show());
+                return;
+            }
+            byte[] fileBytes = is.readAllBytes();
+            is.close();
+            String fileName = getFileName(uri);
+            String mimeType = getContentResolver().getType(uri);
+            if (mimeType == null) mimeType = "application/octet-stream";
+
+            String fieldName = getMediaFieldName(method.apiName);
+            okhttp3.RequestBody fileBody = okhttp3.RequestBody.create(fileBytes, okhttp3.MediaType.parse(mimeType));
+            okhttp3.MultipartBody.Builder mpBuilder = new okhttp3.MultipartBody.Builder()
+                    .setType(okhttp3.MultipartBody.FORM)
+                    .addFormDataPart(fieldName, fileName, fileBody);
+
+            for (Map.Entry<String, String> e : params.entrySet()) {
+                if (isMediaParam(e.getKey())) continue;
+                mpBuilder.addFormDataPart(e.getKey(), e.getValue());
+            }
+
+            String url = "https://api.telegram.org/bot" + token + "/" + method.apiName;
+            okhttp3.Request request = new okhttp3.Request.Builder().url(url).post(mpBuilder.build()).build();
+            okhttp3.Response response = client.newCall(request).execute();
+            String body = response.body() != null ? response.body().string() : "";
+            response.close();
+            handleApiResponse(method, body, node, chatId, userName, text);
+        } catch (Exception e) {
+            runOnUiThread(() -> {
+                Snackbar.make(canvas, "Upload error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show();
+                addLog("[Upload Error] " + method.apiName + ": " + e.getMessage());
+            });
+        }
     }
 
     private boolean isMediaParam(String key) {
