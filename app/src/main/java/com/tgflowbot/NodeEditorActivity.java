@@ -289,7 +289,7 @@ public class NodeEditorActivity extends AppCompatActivity {
                 lp.setMargins(0, margin, 0, 0);
                 cb.setLayoutParams(lp);
                 propertiesContainer.addView(cb);
-            } else if (hasInputType && key.equals("input_type")) {
+} else if (hasInputType && key.equals("input_type")) {
                 TextInputLayout til = new TextInputLayout(this);
                 til.setLayoutParams(new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -306,17 +306,24 @@ public class NodeEditorActivity extends AppCompatActivity {
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT));
                 actv.setInputType(android.text.InputType.TYPE_NULL);
-                actv.setText(value, false);
                 actv.setTag("prop_" + key);
                 String[] options = {"url", "upload"};
-                actv.setAdapter(new android.widget.ArrayAdapter<>(this,
-                        android.R.layout.simple_dropdown_item_1line, options));
+                android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(this,
+                        android.R.layout.simple_dropdown_item_1line, options);
+                actv.setAdapter(adapter);
+                // Ensure default value is set after adapter
+                actv.setText(value, false);
+                // If text is empty, force default to "url"
+                if (actv.getText() == null || actv.getText().toString().isEmpty()) {
+                    actv.setText("url", false);
+                }
                 til.addView(actv);
 
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT);
-                lp.setMargins(0, margin, 0, 0);
+                int m = (int) (8 * getResources().getDisplayMetrics().density);
+                lp.setMargins(0, m, 0, 0);
                 til.setLayoutParams(lp);
                 propertiesContainer.addView(til);
 
@@ -472,6 +479,9 @@ public class NodeEditorActivity extends AppCompatActivity {
                     android.widget.EditText et = til.getEditText();
                     if (et != null && et.getText() != null) {
                         value = et.getText().toString();
+                    }
+                    if (key.equals("input_type") && (value == null || value.isEmpty())) {
+                        value = "url";
                     }
                 }
             } else if (child instanceof MaterialCheckBox) {
