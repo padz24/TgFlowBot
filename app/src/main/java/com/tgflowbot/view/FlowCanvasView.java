@@ -61,6 +61,7 @@ public class FlowCanvasView extends View {
     private final Paint labelPaint;
     private boolean dotAnimating = false;
     private float dotProgress = 0f;
+    private String pulseSourceNodeId;
     private final Handler dotHandler = new Handler();
     private final Runnable dotRunnable = new Runnable() {
         @Override
@@ -68,6 +69,7 @@ public class FlowCanvasView extends View {
             dotProgress += 0.06f;
             if (dotProgress > 1f) {
                 dotAnimating = false;
+                pulseSourceNodeId = null;
                 invalidate();
                 return;
             }
@@ -373,10 +375,11 @@ public class FlowCanvasView extends View {
             }
         }
 
-        if (dotAnimating) {
+        if (dotAnimating && pulseSourceNodeId != null) {
             for (Connection conn : workflow.getConnections()) {
-                ViewNode sourceVn = getViewNodeByNodeId(conn.getSourceNodeId());
+                if (!conn.getSourceNodeId().equals(pulseSourceNodeId)) continue;
                 ViewNode targetVn = getViewNodeByNodeId(conn.getTargetNodeId());
+                ViewNode sourceVn = getViewNodeByNodeId(conn.getSourceNodeId());
                 if (sourceVn == null || targetVn == null) continue;
                 PointF start = sourceVn.getOutputPort() != null ? sourceVn.getOutputPort().getCenter() : null;
                 PointF end = targetVn.getInputPort() != null ? targetVn.getInputPort().getCenter() : null;
@@ -406,9 +409,10 @@ public class FlowCanvasView extends View {
         return u * u * u * p0 + 3f * u * u * t * p1 + 3f * u * t * t * p2 + t * t * t * p3;
     }
 
-    public void triggerPulse() {
+    public void triggerPulse(String sourceNodeId) {
         dotAnimating = true;
         dotProgress = 0f;
+        pulseSourceNodeId = sourceNodeId;
         dotHandler.removeCallbacks(dotRunnable);
         dotHandler.post(dotRunnable);
     }

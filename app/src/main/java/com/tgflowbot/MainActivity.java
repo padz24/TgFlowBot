@@ -1543,7 +1543,7 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         Snackbar.make(canvas, "AI: " + responseText,
                                 Snackbar.LENGTH_LONG).show();
-                        canvas.triggerPulse();
+                        canvas.triggerPulse(node.getId());
                         continueFlow(node, cId, uName, responseText);
                     });
                 }
@@ -1604,7 +1604,7 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Snackbar.make(canvas, "AI: " + responseText,
                             Snackbar.LENGTH_LONG).show();
-                    canvas.triggerPulse();
+                    canvas.triggerPulse(node.getId());
                     continueFlow(node, cId, uName, responseText);
                 });
             }
@@ -1981,7 +1981,7 @@ public class MainActivity extends AppCompatActivity {
                     flattenJsonTo("result", resultEl, currentMsgData);
                 }
                 runOnUiThread(() -> {
-                    canvas.triggerPulse();
+                    canvas.triggerPulse(node.getId());
                     Snackbar.make(canvas, method.displayName + " berhasil", Snackbar.LENGTH_SHORT).show();
                     continueFlow(node, chatId, userName, resultStr);
                 });
@@ -2704,7 +2704,7 @@ public class MainActivity extends AppCompatActivity {
             final String finalResult = result;
             currentMsgData.put("result", finalResult);
             runOnUiThread(() -> {
-                canvas.triggerPulse();
+                canvas.triggerPulse(node.getId());
                 continueFlow(node, chatId, userName, finalResult);
             });
         }).start();
@@ -2954,14 +2954,14 @@ public class MainActivity extends AppCompatActivity {
                         final String recognized = sttResult[0].isEmpty() ? sttText : sttResult[0];
                         if (!sttResult[0].isEmpty()) addLog("STT: " + sttResult[0]);
                         runOnUiThread(() -> {
-                            canvas.triggerPulse();
+                            canvas.triggerPulse(sttNode.getId());
                             continueFlow(sttNode, sttChatId, sttUser, recognized);
                         });
                     }).start();
                     return;
                 }
             }
-            canvas.triggerPulse();
+            canvas.triggerPulse(node.getId());
             continueFlow(node, chatId, userName, text);
         });
     }
