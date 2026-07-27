@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginBottom="8dp"
+  app:cardCornerRadius="16dp"
+  app:cardElevation="2dp"
+  app:strokeWidth="0dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+
+      <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+          android:id="@+id/tv_ext_name"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <TextView
+          android:id="@+id/tv_ext_category"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="2dp"
+          android:textAppearance="?attr/textAppearanceLabelSmall"
+          android:textColor="?attr/colorPrimary"
+          android:alpha="0.8" />
+
+        <TextView
+          android:id="@+id/tv_ext_description"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:textAppearance="?attr/textAppearanceBodySmall"
+          android:textColor="?attr/colorOnSurfaceVariant"
+          android:maxLines="2"
+          android:ellipsize="end" />
+
+        <TextView
+          android:id="@+id/tv_ext_methods"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:textAppearance="?attr/textAppearanceLabelSmall"
+          android:textColor="?attr/colorOnSurfaceVariant"
+          android:alpha="0.6" />
+
+      </LinearLayout>
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_install"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="80dp"
+        android:text="@string/install"
+        android:textAllCaps="false"
+        android:visibility="gone" />
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_remove"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="80dp"
+        android:text="@string/remove"
+        android:textAllCaps="false"
+        android:visibility="gone"
+        android:backgroundTint="?attr/colorErrorContainer"
+        android:textColor="?attr/colorOnErrorContainer" />
+
+    </LinearLayout>
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

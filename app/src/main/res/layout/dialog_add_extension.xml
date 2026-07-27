@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:hint="Nama Extension">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/et_ext_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:hint="Package / Identifier">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/et_ext_id"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:hint="Definisi Method (JSON array)">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/et_ext_methods"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minLines="6"
+        android:gravity="top"
+        android:inputType="textMultiLine"
+        android:fontFamily="monospace" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:text='Format: [{"apiName":"customMethod","displayName":"My Method","description":"...","nodeType":"ACTION","params":[{"name":"param1","type":"STRING","required":true,"hint":"..."}]}]'
+      android:textAppearance="?attr/textAppearanceLabelSmall"
+      android:textColor="?attr/colorOnSurfaceVariant" />
+
+  </LinearLayout>
+
+</ScrollView>

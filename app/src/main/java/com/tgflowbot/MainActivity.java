@@ -1,0 +1,2852 @@
+package com.tgflowbot;
+
+import android.content.ClipData;
+import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.OpenableColumns;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.snackbar.Snackbar;
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
+import com.tgflowbot.model.Connection;
+import com.tgflowbot.model.FlowNode;
+import com.tgflowbot.model.NodeType;
+import com.tgflowbot.model.Workflow;
+import com.tgflowbot.telegram.ExtensionModule;
+import com.tgflowbot.telegram.MethodRegistry;
+import com.tgflowbot.telegram.ParamDef;
+import com.tgflowbot.telegram.TelegramMethod;
+import com.tgflowbot.telegram.TelegramHelper;
+import com.tgflowbot.telegram.ai.AiChatHelper;
+import com.tgflowbot.telegram.ai.AiProvider;
+import com.tgflowbot.view.FlowCanvasView;
+import com.tgflowbot.view.NodeAdapter;
+import com.tgflowbot.view.WorkflowAdapter;
+
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+public class MainActivity extends AppCompatActivity {
+
+    private FlowCanvasView canvas;
+    private Workflow workflow;
+    private FlowNode selectedNode;
+    private String lastChatId;
+    private final ArrayList<String> logEntries = new ArrayList<>();
+    private final Object logLock = new Object();
+    private LogAdapter logAdapter;
+    private boolean isRunning = false;
+    private boolean pollingInProgress = false;
+    private boolean dirty = false;
+    private MenuItem runMenuItem;
+    private final Map<String, String> variables = new HashMap<>();
+    private Map<String, String> currentMsgData = new HashMap<>();
+    private final Handler bgHandler = new Handler(Looper.getMainLooper());
+    private final Runnable pollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isRunning) return;
+            pollMessagesOnce(false);
+        }
+    };
+
+    private static final String PREFS_NAME = "tgflowbot";
+    private static final String WORKFLOW_KEY = "workflow";
+
+    private DrawerLayout drawerLayout;
+    private NodeAdapter triggerAdapter, actionTgAdapter, actionAiAdapter,
+            actionMathAdapter, actionTextAdapter, actionVarsAdapter, actionFlowAdapter,
+            actionPhoneAdapter, actionListAdapter, actionOpAdapter, actionFileAdapter,
+            actionHttpAdapter, conditionAdapter, outputAdapter;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        MaterialToolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
+        drawerLayout = findViewById(R.id.drawer_layout);
+        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
+                this, drawerLayout, toolbar,
+                R.string.open_drawer, R.string.close_drawer);
+        drawerLayout.addDrawerListener(toggle);
+        toggle.syncState();
+
+        canvas = findViewById(R.id.canvas);
+        workflow = new Workflow();
+
+        String workflowData = getIntent().getStringExtra("workflow_data");
+        String workflowName = getIntent().getStringExtra("workflow_name");
+        if (workflowData != null && !workflowData.isEmpty()) {
+            try {
+                Workflow loaded = new Gson().fromJson(workflowData, Workflow.class);
+                if (loaded != null) {
+                    workflow = loaded;
+                    workflow.deduplicateConnections();
+                }
+            } catch (Exception ignored) {}
+        }
+        if (workflowName != null && !workflowName.isEmpty()) {
+            toolbar.setTitle(workflowName);
+        }
+        canvas.setWorkflow(workflow);
+
+        canvas.setNodeActionListener(new FlowCanvasView.OnNodeActionListener() {
+            @Override
+            public void onNodeSelected(FlowNode node) {
+                selectedNode = node;
+            }
+
+            @Override
+            public void onNodeDoubleTap(FlowNode node) {
+                openNodeEditor(node);
+            }
+
+            @Override
+            public void onNodeLongPress(FlowNode node) {
+                showNodeActions(node);
+            }
+
+            @Override
+            public void onConnectionCreated(Connection connection) {
+                Snackbar.make(canvas, "Koneksi dibuat", Snackbar.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onNodeDropped(FlowNode node) {
+                setDirty();
+                Snackbar.make(canvas, node.getLabel() + " ditambahkan", Snackbar.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onCanvasLongPress() {
+                drawerLayout.openDrawer(findViewById(R.id.drawer_panel));
+            }
+        });
+
+        lastChatId = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString("last_chat_id", "");
+
+        loadAndRegisterExtensions();
+        setupNodePalette();
+    }
+
+    private void loadAndRegisterExtensions() {
+        Set<String> installed = loadInstalledPackageIds();
+        if (installed.isEmpty()) {
+            installed.add("com.tgflowbot.ext.core");
+            installed.add("com.tgflowbot.ext.triggers");
+            installed.add("com.tgflowbot.ext.conditions");
+            saveInstalledPackageIds(installed);
+        }
+        MethodRegistry.clearExtensions();
+        List<ExtensionModule> marketplace = ExtensionModule.getMarketplaceExtensions();
+        for (ExtensionModule ext : marketplace) {
+            if (installed.contains(ext.packageId)) {
+                MethodRegistry.registerExtension(ext);
+            }
+        }
+    }
+
+    private Set<String> loadInstalledPackageIds() {
+        String json = getSharedPreferences("extensions", MODE_PRIVATE)
+                .getString("installed_packages", "[]");
+        Type type = new TypeToken<Set<String>>(){}.getType();
+        Set<String> set = new Gson().fromJson(json, type);
+        if (set == null) set = new HashSet<>();
+        return set;
+    }
+
+    private void saveInstalledPackageIds(Set<String> ids) {
+        getSharedPreferences("extensions", MODE_PRIVATE)
+                .edit()
+                .putString("installed_packages", new Gson().toJson(ids))
+                .apply();
+    }
+
+    private void setupNodePalette() {
+        List<NodeAdapter.NodeItem> triggers = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsTg = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsAi = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsMath = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsText = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsVars = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsFlow = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsPhone = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsList = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsOp = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsFile = new ArrayList<>();
+        List<NodeAdapter.NodeItem> actionsHttp = new ArrayList<>();
+        List<NodeAdapter.NodeItem> conditions = new ArrayList<>();
+        List<NodeAdapter.NodeItem> outputs = new ArrayList<>();
+
+        for (TelegramMethod m : MethodRegistry.getAllMethods()) {
+            NodeAdapter.NodeItem item = new NodeAdapter.NodeItem(
+                    m.displayName, m.description, m.nodeType, m.apiName);
+            if (m.nodeType == NodeType.ACTION) {
+                String subCat = getActionSubcategory(m.apiName);
+                switch (subCat) {
+                    case "tg": actionsTg.add(item); break;
+                    case "ai": actionsAi.add(item); break;
+                    case "math": actionsMath.add(item); break;
+                    case "text": actionsText.add(item); break;
+                    case "vars": actionsVars.add(item); break;
+                    case "flow": actionsFlow.add(item); break;
+                    case "phone": actionsPhone.add(item); break;
+                    case "list": actionsList.add(item); break;
+                    case "op": actionsOp.add(item); break;
+                    case "file": actionsFile.add(item); break;
+                    case "http": actionsHttp.add(item); break;
+                    default: actionsTg.add(item);
+                }
+            } else {
+                switch (m.nodeType) {
+                    case TRIGGER: triggers.add(item); break;
+                    case CONDITION: conditions.add(item); break;
+                    case OUTPUT: outputs.add(item); break;
+                }
+            }
+        }
+
+        NodeAdapter.OnNodeClickListener clickListener = item -> {
+            drawerLayout.closeDrawer(findViewById(R.id.drawer_panel));
+            FlowNode node = new FlowNode(item.name, item.type, 100f, 100f);
+            if (item.methodName != null) node.putProperty("_method", item.methodName);
+            addNodeToCanvas(node);
+        };
+
+        NodeAdapter.OnNodeDragListener dragListener = (item, view) -> {
+            String label = item.name + "|" + item.type.name();
+            ClipData clipData = ClipData.newPlainText(label, item.methodName != null ? item.methodName : "");
+            View.DragShadowBuilder shadow = new View.DragShadowBuilder(view);
+            view.startDragAndDrop(clipData, shadow, null, 0);
+        };
+
+        triggerAdapter = new NodeAdapter(triggers, clickListener);
+        triggerAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_triggers)).setAdapter(triggerAdapter);
+        findViewById(R.id.section_trigger).setVisibility(triggers.isEmpty() ? View.GONE : View.VISIBLE);
+
+        actionTgAdapter = new NodeAdapter(actionsTg, clickListener);
+        actionTgAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_tg)).setAdapter(actionTgAdapter);
+        boolean tgHas = !actionsTg.isEmpty();
+        findViewById(R.id.sub_tg).setVisibility(tgHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_tg).setVisibility(tgHas ? View.VISIBLE : View.GONE);
+
+        actionAiAdapter = new NodeAdapter(actionsAi, clickListener);
+        actionAiAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_ai)).setAdapter(actionAiAdapter);
+        boolean aiHas = !actionsAi.isEmpty();
+        findViewById(R.id.sub_ai).setVisibility(aiHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_ai).setVisibility(aiHas ? View.VISIBLE : View.GONE);
+
+        actionMathAdapter = new NodeAdapter(actionsMath, clickListener);
+        actionMathAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_math)).setAdapter(actionMathAdapter);
+        boolean mathHas = !actionsMath.isEmpty();
+        findViewById(R.id.sub_math).setVisibility(mathHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_math).setVisibility(mathHas ? View.VISIBLE : View.GONE);
+
+        actionTextAdapter = new NodeAdapter(actionsText, clickListener);
+        actionTextAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_text)).setAdapter(actionTextAdapter);
+        boolean textHas = !actionsText.isEmpty();
+        findViewById(R.id.sub_text).setVisibility(textHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_text).setVisibility(textHas ? View.VISIBLE : View.GONE);
+
+        actionVarsAdapter = new NodeAdapter(actionsVars, clickListener);
+        actionVarsAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_vars)).setAdapter(actionVarsAdapter);
+        boolean varsHas = !actionsVars.isEmpty();
+        findViewById(R.id.sub_vars).setVisibility(varsHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_vars).setVisibility(varsHas ? View.VISIBLE : View.GONE);
+
+        actionFlowAdapter = new NodeAdapter(actionsFlow, clickListener);
+        actionFlowAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_flow)).setAdapter(actionFlowAdapter);
+        boolean flowHas = !actionsFlow.isEmpty();
+        findViewById(R.id.sub_flow).setVisibility(flowHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_flow).setVisibility(flowHas ? View.VISIBLE : View.GONE);
+
+        actionPhoneAdapter = new NodeAdapter(actionsPhone, clickListener);
+        actionPhoneAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_phone)).setAdapter(actionPhoneAdapter);
+        boolean phoneHas = !actionsPhone.isEmpty();
+        findViewById(R.id.sub_phone).setVisibility(phoneHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_phone).setVisibility(phoneHas ? View.VISIBLE : View.GONE);
+
+        actionListAdapter = new NodeAdapter(actionsList, clickListener);
+        actionListAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_list)).setAdapter(actionListAdapter);
+        boolean listHas = !actionsList.isEmpty();
+        findViewById(R.id.sub_list).setVisibility(listHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_list).setVisibility(listHas ? View.VISIBLE : View.GONE);
+
+        actionOpAdapter = new NodeAdapter(actionsOp, clickListener);
+        actionOpAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_op)).setAdapter(actionOpAdapter);
+        boolean opHas = !actionsOp.isEmpty();
+        findViewById(R.id.sub_op).setVisibility(opHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_op).setVisibility(opHas ? View.VISIBLE : View.GONE);
+
+        actionFileAdapter = new NodeAdapter(actionsFile, clickListener);
+        actionFileAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_file)).setAdapter(actionFileAdapter);
+        boolean fileHas = !actionsFile.isEmpty();
+        findViewById(R.id.sub_file).setVisibility(fileHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_file).setVisibility(fileHas ? View.VISIBLE : View.GONE);
+
+        actionHttpAdapter = new NodeAdapter(actionsHttp, clickListener);
+        actionHttpAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_actions_http)).setAdapter(actionHttpAdapter);
+        boolean httpHas = !actionsHttp.isEmpty();
+        findViewById(R.id.sub_http).setVisibility(httpHas ? View.VISIBLE : View.GONE);
+        findViewById(R.id.rv_actions_http).setVisibility(httpHas ? View.VISIBLE : View.GONE);
+
+        conditionAdapter = new NodeAdapter(conditions, clickListener);
+        conditionAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_conditions)).setAdapter(conditionAdapter);
+        findViewById(R.id.section_condition).setVisibility(conditions.isEmpty() ? View.GONE : View.VISIBLE);
+
+        outputAdapter = new NodeAdapter(outputs, clickListener);
+        outputAdapter.setOnNodeDragListener(dragListener);
+        ((RecyclerView) findViewById(R.id.rv_outputs)).setAdapter(outputAdapter);
+        findViewById(R.id.section_output).setVisibility(outputs.isEmpty() ? View.GONE : View.VISIBLE);
+
+        TextInputEditText searchInput = findViewById(R.id.search_input);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                filterPalette(s.toString());
+            }
+        });
+
+        filterPalette("");
+    }
+
+    private String getActionSubcategory(String apiName) {
+        if (apiName == null) return "tg";
+        if (apiName.equals("ai_chat")) return "ai";
+        if (apiName.startsWith("_add") || apiName.startsWith("_subtract")
+                || apiName.startsWith("_multiply") || apiName.startsWith("_divide")
+                || apiName.startsWith("_modulo") || apiName.startsWith("_random"))
+            return "math";
+        if (apiName.startsWith("_text_"))
+            return "text";
+        if (apiName.startsWith("_set_") || apiName.startsWith("_get_")
+                || apiName.startsWith("_var_"))
+            return "vars";
+        if (apiName.startsWith("_delay") || apiName.equals("_return")
+                || apiName.startsWith("_repeat") || apiName.startsWith("_wait_")
+                || apiName.equals("_loop_break"))
+            return "flow";
+        if (apiName.startsWith("_list_"))
+            return "list";
+        if (apiName.startsWith("_power") || apiName.startsWith("_sqrt")
+                || apiName.startsWith("_abs") || apiName.startsWith("_round")
+                || apiName.startsWith("_floor") || apiName.startsWith("_ceil")
+                || apiName.startsWith("_min") || apiName.startsWith("_max")
+                || apiName.startsWith("_clamp"))
+            return "op";
+        if (apiName.startsWith("_file_"))
+            return "file";
+        if (apiName.startsWith("_http_request"))
+            return "http";
+        if (apiName.equals("_log"))
+            return "flow";
+        if (apiName.startsWith("_phone_"))
+            return "phone";
+        return "tg";
+    }
+
+    private void filterPalette(String query) {
+        filterSection(R.id.section_trigger, R.id.rv_triggers, query);
+        filterSection(R.id.sub_tg, R.id.rv_actions_tg, query);
+        filterSection(R.id.sub_ai, R.id.rv_actions_ai, query);
+        filterSection(R.id.sub_math, R.id.rv_actions_math, query);
+        filterSection(R.id.sub_text, R.id.rv_actions_text, query);
+        filterSection(R.id.sub_vars, R.id.rv_actions_vars, query);
+        filterSection(R.id.sub_flow, R.id.rv_actions_flow, query);
+        filterSection(R.id.sub_list, R.id.rv_actions_list, query);
+        filterSection(R.id.sub_op, R.id.rv_actions_op, query);
+        filterSection(R.id.sub_file, R.id.rv_actions_file, query);
+        filterSection(R.id.sub_http, R.id.rv_actions_http, query);
+        filterSection(R.id.sub_phone, R.id.rv_actions_phone, query);
+        filterSection(R.id.section_condition, R.id.rv_conditions, query);
+        filterSection(R.id.section_output, R.id.rv_outputs, query);
+    }
+
+    private void filterSection(int sectionId, int rvId, String query) {
+        View section = findViewById(sectionId);
+        RecyclerView rv = findViewById(rvId);
+        if (section == null || rv == null) return;
+        NodeAdapter adapter = (NodeAdapter) rv.getAdapter();
+        if (adapter == null || adapter.getItemCount() == 0) {
+            section.setVisibility(View.GONE);
+            rv.setVisibility(View.GONE);
+            return;
+        }
+        boolean visible = query.isEmpty() || anyMatch(adapter, query);
+        section.setVisibility(visible ? View.VISIBLE : View.GONE);
+        rv.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    private boolean anyMatch(NodeAdapter adapter, String query) {
+        String q = query.toLowerCase();
+        for (int i = 0; i < adapter.getItemCount(); i++) {
+            NodeAdapter.NodeItem item = adapter.getItems().get(i);
+            if (item.name.toLowerCase().contains(q)
+                    || item.description.toLowerCase().contains(q)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.main_menu, menu);
+        runMenuItem = menu.findItem(R.id.action_run);
+        updateRunIcon();
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        int id = item.getItemId();
+        if (id == R.id.action_save) {
+            saveWorkflow();
+            return true;
+        } else if (id == R.id.action_run) {
+            toggleWorkflow();
+            return true;
+        } else if (id == R.id.action_poll) {
+            pollMessages();
+            return true;
+        } else if (id == R.id.action_set_chat_id) {
+            showChatIdInput();
+            return true;
+        } else if (id == R.id.action_view_log) {
+            showLogViewer();
+            return true;
+        } else if (id == R.id.action_settings) {
+            showSettingsDialog();
+            return true;
+        } else if (id == R.id.action_delete_all) {
+            confirmDeleteAll();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    private void addNodeToCanvas(FlowNode node) {
+        canvas.addNode(node);
+        setDirty();
+        Snackbar.make(canvas, node.getLabel() + " ditambahkan — seret untuk pindah", Snackbar.LENGTH_SHORT).show();
+    }
+
+    private void openNodeEditor(FlowNode node) {
+        Intent intent = new Intent(this, NodeEditorActivity.class);
+        intent.putExtra("node_id", node.getId());
+        intent.putExtra("node_label", node.getLabel());
+        intent.putExtra("node_type", node.getType().name());
+        intent.putExtra("method_name", node.getProperty("_method"));
+        Gson gson = new Gson();
+        intent.putExtra("node_properties", gson.toJson(node.getProperties()));
+        startActivityForResult(intent, 100);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
+            String nodeId = data.getStringExtra("node_id");
+            String label = data.getStringExtra("node_label");
+            String propertiesJson = data.getStringExtra("node_properties");
+            boolean delete = data.getBooleanExtra("delete", false);
+
+            FlowNode node = workflow.findNodeById(nodeId);
+            if (node != null) {
+                if (delete) {
+                    canvas.removeSelectedNode();
+                    selectedNode = null;
+                    setDirty();
+                    Snackbar.make(canvas, "Node dihapus", Snackbar.LENGTH_SHORT).show();
+                } else {
+                    node.setLabel(label);
+                    Gson gson = new Gson();
+                    Type type = new TypeToken<java.util.Map<String, String>>(){}.getType();
+                    java.util.Map<String, String> props = gson.fromJson(propertiesJson, type);
+                    if (props != null) {
+                        String savedMethod = node.getProperty("_method");
+                        node.setProperties(props);
+                        if (savedMethod != null) {
+                            node.putProperty("_method", savedMethod);
+                        }
+                    }
+                    setDirty();
+                    canvas.invalidate();
+                    Snackbar.make(canvas, "Node diperbarui", Snackbar.LENGTH_SHORT).show();
+                }
+            }
+        } else if (requestCode == REQUEST_PICK_FILE && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri != null) {
+                uploadFileWithUri(uri);
+            }
+        }
+    }
+
+    private void toggleWorkflow() {
+        if (isRunning && dirty) {
+            stopBackgroundPolling();
+            dirty = false;
+            startBackgroundPolling();
+        } else if (isRunning) {
+            stopBackgroundPolling();
+        } else {
+            startBackgroundPolling();
+        }
+    }
+
+    private void startBackgroundPolling() {
+        boolean hasTelegramTrigger = false;
+        FlowNode listeningNode = null;
+        FlowNode scheduleNode = null;
+        FlowNode intervalNode = null;
+        FlowNode httpPollNode = null;
+        FlowNode webhookNode = null;
+        FlowNode manualNode = null;
+        for (FlowNode n : workflow.getNodes()) {
+            if (n.getType() != NodeType.TRIGGER) continue;
+            String mName = n.getProperty("_method");
+            if (mName == null) {
+                TelegramMethod m = findMethodByLabel(n.getLabel());
+                if (m != null) mName = m.apiName;
+            }
+            if (mName != null && "_on_listening".equals(mName)) {
+                listeningNode = n;
+            } else if (mName != null && "_on_schedule".equals(mName)) {
+                scheduleNode = n;
+            } else if (mName != null && "_on_interval".equals(mName)) {
+                intervalNode = n;
+            } else if (mName != null && "_on_http_poll".equals(mName)) {
+                httpPollNode = n;
+            } else if (mName != null && "_on_webhook".equals(mName)) {
+                webhookNode = n;
+            } else if (mName != null && "_on_manual".equals(mName)) {
+                manualNode = n;
+            } else if (mName != null) {
+                hasTelegramTrigger = true;
+            }
+        }
+        if (manualNode != null) {
+            isRunning = true;
+            updateRunIcon();
+            startManualTrigger(manualNode);
+            return;
+        }
+        if (!hasTelegramTrigger && listeningNode != null) {
+            String prompt = listeningNode.getProperty("prompt");
+            String timeoutRaw = listeningNode.getProperty("timeout_sec");
+            int timeoutSec = 10;
+            try { timeoutSec = Integer.parseInt(timeoutRaw); } catch (Exception ignored) {}
+            if (prompt == null || prompt.isEmpty()) prompt = "Silakan bicara";
+            isRunning = true;
+            updateRunIcon();
+            addLog("On Listening: mendengarkan...");
+            startSttForTrigger(prompt, timeoutSec, listeningNode);
+            return;
+        }
+        if (scheduleNode != null) {
+            isRunning = true;
+            updateRunIcon();
+            startScheduleTrigger(scheduleNode);
+        }
+        if (intervalNode != null) {
+            isRunning = true;
+            updateRunIcon();
+            startIntervalTrigger(intervalNode);
+        }
+        if (httpPollNode != null) {
+            isRunning = true;
+            updateRunIcon();
+            startHttpPollTrigger(httpPollNode);
+        }
+        if (webhookNode != null) {
+            isRunning = true;
+            updateRunIcon();
+            startWebhookTrigger(webhookNode);
+        }
+        if (!hasTelegramTrigger && listeningNode == null && scheduleNode == null && intervalNode == null && httpPollNode == null && webhookNode == null) {
+            Snackbar.make(canvas, "Tidak ada trigger aktif", Snackbar.LENGTH_SHORT).show();
+            return;
+        }
+        if (hasTelegramTrigger) {
+            String token = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString("bot_token", "");
+            if (token.isEmpty()) {
+                Snackbar.make(canvas, "Setel BOT_TOKEN dulu",
+                        Snackbar.LENGTH_LONG)
+                        .setAction("SETTING", v -> showSettingsDialog())
+                        .show();
+                return;
+            }
+            isRunning = true;
+            dirty = false;
+            updateRunIcon();
+            Snackbar.make(canvas, "Workflow started (background)", Snackbar.LENGTH_SHORT).show();
+            bgHandler.post(pollRunnable);
+        }
+    }
+
+    private void stopBackgroundPolling() {
+        isRunning = false;
+        bgHandler.removeCallbacks(pollRunnable);
+        updateRunIcon();
+        Snackbar.make(canvas, "Workflow stopped", Snackbar.LENGTH_SHORT).show();
+    }
+
+    private void updateRunIcon() {
+        if (runMenuItem == null) return;
+        if (isRunning && dirty) {
+            runMenuItem.setIcon(R.drawable.ic_restart);
+            runMenuItem.setTitle("Restart");
+        } else if (isRunning) {
+            runMenuItem.setIcon(R.drawable.ic_stop);
+            runMenuItem.setTitle("Stop");
+        } else {
+            runMenuItem.setIcon(R.drawable.ic_play);
+            runMenuItem.setTitle("Start");
+        }
+    }
+
+    private void setDirty() {
+        dirty = true;
+        updateRunIcon();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        saveWorkflow();
+        if (isRunning) {
+            bgHandler.removeCallbacks(pollRunnable);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (isRunning) {
+            bgHandler.post(pollRunnable);
+        }
+    }
+
+    private void saveWorkflow() {
+        String name = getIntent().getStringExtra("workflow_name");
+        if (name != null && !name.isEmpty()) {
+            saveToWorkflowList(name, new Gson().toJson(workflow));
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(WORKFLOW_KEY, new Gson().toJson(workflow))
+                .apply();
+        Snackbar.make(canvas, "Workflow disimpan", Snackbar.LENGTH_SHORT).show();
+    }
+
+    private void saveToWorkflowList(String name, String data) {
+        String json = getSharedPreferences("workflow_list", MODE_PRIVATE)
+                .getString("workflow_items", "[]");
+        Type type = new TypeToken<List<WorkflowAdapter.WorkflowItem>>(){}.getType();
+        List<WorkflowAdapter.WorkflowItem> items = new Gson().fromJson(json, type);
+        if (items == null) return;
+
+        for (WorkflowAdapter.WorkflowItem item : items) {
+            if (item.name.equals(name)) {
+                item.data = data;
+                break;
+            }
+        }
+        getSharedPreferences("workflow_list", MODE_PRIVATE)
+                .edit()
+                .putString("workflow_items", new Gson().toJson(items))
+                .apply();
+    }
+
+    private void runWorkflow() {
+        if (workflow.getNodes().isEmpty()) {
+            Snackbar.make(canvas, "Workflow kosong!", Snackbar.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean hasListening = false;
+        for (FlowNode n : workflow.getNodes()) {
+            if (n.getType() != NodeType.TRIGGER) continue;
+            String mName = n.getProperty("_method");
+            if (mName == null) {
+                TelegramMethod m = findMethodByLabel(n.getLabel());
+                if (m != null) mName = m.apiName;
+            }
+            if ("_on_listening".equals(mName)) {
+                hasListening = true;
+                String prompt = n.getProperty("prompt");
+                String timeoutRaw = n.getProperty("timeout_sec");
+                int timeoutSec = 10;
+                try { timeoutSec = Integer.parseInt(timeoutRaw); } catch (Exception ignored) {}
+                if (prompt == null || prompt.isEmpty()) prompt = "Silakan bicara";
+                final String sttPrompt = prompt;
+                final int sttTimeout = timeoutSec;
+                final FlowNode triggerNode = n;
+                addLog("On Listening: mendengarkan...");
+                startSttForTrigger(sttPrompt, sttTimeout, triggerNode);
+            }
+        }
+        if (hasListening) return;
+
+        Snackbar.make(canvas, "Workflow dijalankan (trigger all triggers)...",
+                Snackbar.LENGTH_SHORT).show();
+
+        String sampleText = lastChatId != null && !lastChatId.isEmpty()
+                ? "/start test" : "test";
+        Map<String, String> testData = new HashMap<>();
+        testData.put("text", sampleText);
+        testData.put("chat.id", lastChatId != null ? lastChatId : "0");
+        testData.put("message_id", "0");
+        testData.put("date", String.valueOf(System.currentTimeMillis() / 1000));
+        currentMsgData = testData;
+        processIncomingMessage(lastChatId != null ? lastChatId : "0", "", sampleText);
+    }
+
+    private void pollMessages() {
+        pollMessagesOnce(true);
+    }
+
+    private void pollMessagesOnce(boolean showSnackbar) {
+        if (pollingInProgress) return;
+        pollingInProgress = true;
+        String token = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString("bot_token", "");
+        if (token.isEmpty()) {
+            Snackbar.make(canvas, "Setel BOT_TOKEN dulu",
+                    Snackbar.LENGTH_LONG)
+                    .setAction("SETTING", v -> showSettingsDialog())
+                    .show();
+            return;
+        }
+
+        int offset = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getInt("update_offset", 0);
+
+        if (showSnackbar) {
+            Snackbar.make(canvas, "Polling pesan...", Snackbar.LENGTH_SHORT).show();
+        }
+
+        int finalOffset = offset;
+        new Thread(() -> {
+            try {
+                okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+                String url = "https://api.telegram.org/bot" + token
+                        + "/getUpdates?offset=" + finalOffset + "&timeout=10";
+                okhttp3.Request request = new okhttp3.Request.Builder().url(url).build();
+                okhttp3.Response response = client.newCall(request).execute();
+                if (response.isSuccessful() && response.body() != null) {
+                    String body = response.body().string();
+                    response.close();
+
+                    com.google.gson.JsonObject json =
+                            new com.google.gson.JsonParser().parse(body).getAsJsonObject();
+                    com.google.gson.JsonArray result =
+                            json.getAsJsonArray("result");
+                    if (result != null && result.size() > 0) {
+                        int maxId = finalOffset;
+                        for (int i = 0; i < result.size(); i++) {
+                            com.google.gson.JsonObject update =
+                                    result.get(i).getAsJsonObject();
+                            int updateId = update.get("update_id").getAsInt();
+                            if (updateId >= maxId) maxId = updateId + 1;
+
+                            com.google.gson.JsonObject message =
+                                    update.getAsJsonObject("message");
+                            if (message != null) {
+                                Map<String, String> msgData = new HashMap<>();
+                                flattenJson("", message, msgData);
+                                currentMsgData = msgData;
+
+                                String chatId = msgData.get("chat.id");
+                                String text = msgData.containsKey("text") ? msgData.get("text") : "";
+                                String userName = msgData.containsKey("from.username")
+                                        ? msgData.get("from.username")
+                                        : msgData.getOrDefault("from.first_name", "");
+
+                                lastChatId = chatId;
+                                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                                        .edit()
+                                        .putString("last_chat_id", chatId)
+                                        .putInt("update_offset", maxId)
+                                        .apply();
+
+                                String finalText = text;
+                                String finalUser = userName;
+                                runOnUiThread(() -> {
+                                    Snackbar.make(canvas,
+                                            "Pesan dari " + chatId + ": " + finalText,
+                                            Snackbar.LENGTH_LONG).show();
+                                    processIncomingMessage(chatId, finalUser, finalText);
+                                });
+                            }
+                        }
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                                .edit().putInt("update_offset", maxId).apply();
+                    } else if (showSnackbar) {
+                        runOnUiThread(() -> Snackbar.make(canvas,
+                                "Tidak ada pesan baru", Snackbar.LENGTH_SHORT).show());
+                    }
+                }
+            } catch (Exception e) {
+                runOnUiThread(() -> Snackbar.make(canvas,
+                        "Gagal poll: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+            }
+            pollingInProgress = false;
+            if (isRunning) {
+                bgHandler.postDelayed(pollRunnable, 3000);
+            }
+        }).start();
+    }
+
+    private void processIncomingMessage(String chatId, String userName, String text) {
+        addLog("Pesan dari " + (userName.isEmpty() ? chatId : userName) + ": " + text);
+
+        for (FlowNode node : workflow.getNodes()) {
+            if (node.getType() == NodeType.TRIGGER) {
+                String methodName = node.getProperty("_method");
+                if (methodName == null) {
+                    TelegramMethod m = findMethodByLabel(node.getLabel());
+                    if (m != null) methodName = m.apiName;
+                }
+                String command = resolveTemplate(node.getProperty("command"), text, chatId, userName);
+                String filter = resolveTemplate(node.getProperty("filter"), text, chatId, userName);
+
+                boolean match = true;
+                if ("_on_listening".equals(methodName)) {
+                    match = true;
+                } else if (command != null && !command.isEmpty()) {
+                    match = text.startsWith(command);
+                }
+                if (match && filter != null && !filter.isEmpty()) {
+                    match = text.contains(filter);
+                }
+
+                if (match) {
+                    addLog("Trigger '" + node.getLabel() + "' cocok, menjalankan flow");
+                    processFlowFromNode(node, chatId, userName, text);
+                }
+            }
+        }
+    }
+
+    private void startSttForTrigger(String prompt, int timeoutSec, FlowNode triggerNode) {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            addLog("Izin mikrofon diperlukan untuk On Listening");
+            runOnUiThread(() -> Snackbar.make(canvas, "Izin mikrofon diperlukan untuk On Listening",
+                    Snackbar.LENGTH_LONG)
+                    .setAction("IZIN", v -> requestPermissions(
+                            new String[]{android.Manifest.permission.RECORD_AUDIO}, 1002))
+                    .show());
+            return;
+        }
+        final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        final String[] sttResult = {""};
+        final android.speech.SpeechRecognizer[] recognizerRef = new android.speech.SpeechRecognizer[1];
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            android.content.Intent intent = new android.content.Intent(
+                    android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, prompt);
+            intent.putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+            android.speech.SpeechRecognizer r = android.speech.SpeechRecognizer.createSpeechRecognizer(
+                    com.tgflowbot.MainActivity.this);
+            recognizerRef[0] = r;
+            r.setRecognitionListener(new android.speech.RecognitionListener() {
+                @Override public void onReadyForSpeech(android.os.Bundle p) {}
+                @Override public void onBeginningOfSpeech() {}
+                @Override public void onRmsChanged(float v) {}
+                @Override public void onBufferReceived(byte[] b) {}
+                @Override public void onEndOfSpeech() {}
+                @Override public void onError(int err) {
+                    addLog("On Listening error: " + err);
+                    if (recognizerRef[0] != null) recognizerRef[0].destroy();
+                    latch.countDown();
+                }
+                @Override public void onResults(android.os.Bundle r) {
+                    java.util.ArrayList<String> m = r.getStringArrayList(
+                            android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (m != null && !m.isEmpty()) sttResult[0] = m.get(0);
+                    if (recognizerRef[0] != null) recognizerRef[0].destroy();
+                    latch.countDown();
+                }
+                @Override public void onPartialResults(android.os.Bundle p) {}
+                @Override public void onEvent(int e, android.os.Bundle p) {}
+            });
+            r.startListening(intent);
+        });
+        new Thread(() -> {
+            try { latch.await(timeoutSec, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (Exception ignored) {}
+            if (sttResult[0].isEmpty()) {
+                addLog("On Listening: tidak ada suara terdeteksi, workflow berhenti");
+                runOnUiThread(() -> stopBackgroundPolling());
+                return;
+            }
+            addLog("On Listening: " + sttResult[0]);
+            final String fText = sttResult[0];
+            Map<String, String> msgData = new HashMap<>();
+            msgData.put("text", fText);
+            msgData.put("chat.id", lastChatId != null ? lastChatId : "0");
+            msgData.put("message_id", "0");
+            msgData.put("date", String.valueOf(System.currentTimeMillis() / 1000));
+            currentMsgData = msgData;
+            runOnUiThread(() -> {
+                Snackbar.make(canvas, "STT: " + fText, Snackbar.LENGTH_LONG).show();
+                addLog("Trigger '" + triggerNode.getLabel() + "' cocok, menjalankan flow");
+                String chatId2 = lastChatId != null && !lastChatId.isEmpty() ? lastChatId : "0";
+                processFlowFromNode(triggerNode, chatId2, "", fText);
+                if (isRunning) {
+                    addLog("On Listening: mendengarkan lagi...");
+                    startSttForTrigger(prompt, timeoutSec, triggerNode);
+                }
+            });
+        }).start();
+    }
+
+    private void startScheduleTrigger(FlowNode triggerNode) {
+        String cronExpr = triggerNode.getProperty("cron");
+        String timezone = triggerNode.getProperty("timezone");
+        if (cronExpr == null || cronExpr.isEmpty()) cronExpr = "0 * * * * *";
+        if (timezone == null || timezone.isEmpty()) timezone = "UTC";
+        addLog("Schedule Trigger: " + cronExpr + " (" + timezone + ")");
+
+        final String finalCronExpr = cronExpr;
+        final String finalTimezone = timezone;
+        new Thread(() -> {
+            String[] cronParts = finalCronExpr.split("\\s+");
+            String[] parts = cronParts.length < 5 ? new String[]{"*", "*", "*", "*", "*"} : cronParts;
+            java.time.ZoneId zoneId = java.time.ZoneId.of(finalTimezone);
+
+            while (isRunning) {
+                java.time.ZonedDateTime now = java.time.ZonedDateTime.now(zoneId);
+                java.time.ZonedDateTime next = findNextCronMatch(now, parts, zoneId);
+                final long finalMillis = java.time.Duration.between(now, next).toMillis();
+                if (finalMillis > 0) try { Thread.sleep(finalMillis); } catch (InterruptedException ignored) {}
+                if (!isRunning) break;
+
+                final String fText = "scheduled";
+                final String fChatId = "0";
+                final String fMessageId = "0";
+                final String fDate = String.valueOf(System.currentTimeMillis() / 1000);
+
+                runOnUiThread(() -> {
+                    addLog("Schedule Trigger: waktu tercapai");
+                    Map<String, String> msgData = new HashMap<>();
+                    msgData.put("text", fText);
+                    msgData.put("chat.id", fChatId);
+                    msgData.put("message_id", fMessageId);
+                    msgData.put("date", fDate);
+                    msgData.put("trigger.type", "schedule");
+                    msgData.put("trigger.cron", finalCronExpr);
+                    currentMsgData = msgData;
+                    processFlowFromNode(triggerNode, fChatId, "system", fText);
+                });
+            }
+        }).start();
+    }
+
+    private java.time.ZonedDateTime findNextCronMatch(java.time.ZonedDateTime base, String[] parts, java.time.ZoneId zoneId) {
+        // Simple cron matcher: * = any, number = exact, */n = every n
+        java.time.ZonedDateTime candidate = base.plusSeconds(1).withNano(0);
+        outer: while (true) {
+            if (!matchCronField(candidate.getSecond(), parts[0])) { candidate = candidate.plusSeconds(1); continue; }
+            if (!matchCronField(candidate.getMinute(), parts.length > 1 ? parts[1] : "*")) { candidate = candidate.plusMinutes(1).withSecond(0); continue; }
+            if (!matchCronField(candidate.getHour(), parts.length > 2 ? parts[2] : "*")) { candidate = candidate.plusHours(1).withMinute(0).withSecond(0); continue; }
+            if (!matchCronField(candidate.getDayOfMonth(), parts.length > 3 ? parts[3] : "*")) { candidate = candidate.plusDays(1).withHour(0).withMinute(0).withSecond(0); continue; }
+            if (!matchCronField(candidate.getMonthValue(), parts.length > 4 ? parts[4] : "*")) { candidate = candidate.plusMonths(1).withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0); continue; }
+            if (parts.length > 5 && !matchCronField(candidate.getDayOfWeek().getValue() % 7, parts[5])) { candidate = candidate.plusDays(1).withHour(0).withMinute(0).withSecond(0); continue; }
+            return candidate;
+        }
+    }
+
+    private boolean matchCronField(int value, String expr) {
+        if (expr == null || expr.equals("*")) return true;
+        if (expr.startsWith("*/")) {
+            try { int step = Integer.parseInt(expr.substring(2)); return step > 0 && value % step == 0; } catch (Exception ignored) {}
+        }
+        if (expr.contains("-")) {
+            String[] r = expr.split("-");
+            try { int a = Integer.parseInt(r[0]); int b = Integer.parseInt(r[1]); return value >= a && value <= b; } catch (Exception ignored) {}
+        }
+        if (expr.contains(",")) {
+            for (String v : expr.split(",")) { try { if (Integer.parseInt(v) == value) return true; } catch (Exception ignored) {} }
+        }
+        try { return Integer.parseInt(expr) == value; } catch (Exception ignored) {}
+        return false;
+    }
+
+    private void startIntervalTrigger(FlowNode triggerNode) {
+        String intervalStr = triggerNode.getProperty("interval_sec");
+        int intervalSec = 60;
+        try { intervalSec = Integer.parseInt(intervalStr); } catch (Exception ignored) {}
+        if (intervalSec < 1) intervalSec = 1;
+        addLog("Interval Trigger: setiap " + intervalSec + " detik");
+        final int finalIntervalSec = intervalSec;
+        new Thread(() -> {
+            while (isRunning) {
+                try { Thread.sleep(finalIntervalSec * 1000L); } catch (Exception ignored) {}
+                if (!isRunning) break;
+                runOnUiThread(() -> {
+                    addLog("Interval Trigger: waktu tercapai");
+                    Map<String, String> msgData = new HashMap<>();
+                    msgData.put("text", "interval");
+                    msgData.put("chat.id", "0");
+                    msgData.put("message_id", "0");
+                    msgData.put("date", String.valueOf(System.currentTimeMillis() / 1000));
+                    msgData.put("trigger.type", "interval");
+                    msgData.put("trigger.interval_sec", String.valueOf(finalIntervalSec));
+                    currentMsgData = msgData;
+                    processFlowFromNode(triggerNode, "0", "system", "interval");
+                });
+            }
+        }).start();
+    }
+
+    private void startHttpPollTrigger(FlowNode triggerNode) {
+        String url = triggerNode.getProperty("url");
+        String method = triggerNode.getProperty("http_method");
+        String headersJson = triggerNode.getProperty("headers");
+        String body = triggerNode.getProperty("body");
+        String intervalStr = triggerNode.getProperty("interval_sec");
+        String jsonPath = triggerNode.getProperty("json_path");
+        if (url == null || url.isEmpty()) {
+            addLog("HTTP Poll: URL kosong");
+            return;
+        }
+        if (method == null || method.isEmpty()) method = "GET";
+        int intervalSec = 60;
+        try { intervalSec = Integer.parseInt(intervalStr); } catch (Exception ignored) {}
+        if (intervalSec < 5) intervalSec = 5;
+        addLog("HTTP Poll Trigger: " + method + " " + url + " (interval " + intervalSec + "s)");
+
+        final okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+        final String finalUrl = url;
+        final String finalMethod = method;
+        final String finalBody = body;
+        final String finalHeadersJson = headersJson;
+        final String finalJsonPath = jsonPath;
+        final int finalIntervalSec = intervalSec;
+
+        new Thread(() -> {
+            while (isRunning) {
+                try {
+                    okhttp3.Request.Builder reqBuilder = new okhttp3.Request.Builder().url(finalUrl);
+                    if ("POST".equalsIgnoreCase(finalMethod) || "PUT".equalsIgnoreCase(finalMethod) || "PATCH".equalsIgnoreCase(finalMethod)) {
+                        okhttp3.MediaType mediaType = okhttp3.MediaType.parse("application/json");
+                        okhttp3.RequestBody reqBody = okhttp3.RequestBody.create(finalBody != null ? finalBody : "{}", mediaType);
+                        reqBuilder.method(finalMethod, reqBody);
+                    } else {
+                        reqBuilder.method(finalMethod, null);
+                    }
+                    if (finalHeadersJson != null && !finalHeadersJson.isEmpty()) {
+                        com.google.gson.JsonObject headersObj = new com.google.gson.JsonParser().parse(finalHeadersJson).getAsJsonObject();
+                        for (java.util.Map.Entry<String, com.google.gson.JsonElement> e : headersObj.entrySet()) {
+                            reqBuilder.addHeader(e.getKey(), e.getValue().getAsString());
+                        }
+                    }
+                    okhttp3.Request request = reqBuilder.build();
+                    okhttp3.Response response = client.newCall(request).execute();
+                    String respBody = response.body() != null ? response.body().string() : "";
+                    response.close();
+                    String triggerValue = respBody;
+                    if (finalJsonPath != null && !finalJsonPath.isEmpty()) {
+                        try {
+                            com.google.gson.JsonElement elem = new com.google.gson.JsonParser().parse(respBody);
+                            final String[] parts = finalJsonPath.split("\\.");
+                            for (String part : parts) {
+                                if (elem.isJsonObject() && elem.getAsJsonObject().has(part)) {
+                                    elem = elem.getAsJsonObject().get(part);
+                                } else if (elem.isJsonArray()) {
+                                    int idx = Integer.parseInt(part);
+                                    elem = elem.getAsJsonArray().get(idx);
+                                } else {
+                                    elem = null;
+                                    break;
+                                }
+                            }
+                            if (elem != null) triggerValue = elem.isJsonPrimitive() ? elem.getAsString() : elem.toString();
+                        } catch (Exception ignored) {}
+                    }
+                    final String fValue = triggerValue;
+                    runOnUiThread(() -> {
+                        addLog("HTTP Poll: response diterima");
+                        Map<String, String> msgData = new HashMap<>();
+                        msgData.put("text", fValue);
+                        msgData.put("chat.id", "0");
+                        msgData.put("message_id", "0");
+                        msgData.put("date", String.valueOf(System.currentTimeMillis() / 1000));
+                        msgData.put("trigger.type", "http_poll");
+                        msgData.put("trigger.url", finalUrl);
+                        msgData.put("trigger.response", fValue.length() > 500 ? fValue.substring(0, 500) + "..." : fValue);
+                        currentMsgData = msgData;
+                        processFlowFromNode(triggerNode, "0", "system", fValue);
+                    });
+                } catch (Exception e) {
+                    addLog("HTTP Poll error: " + e.getMessage());
+                }
+                try { Thread.sleep(finalIntervalSec * 1000L); } catch (Exception ignored) {}
+            }
+        }).start();
+    }
+
+    private void startWebhookTrigger(FlowNode triggerNode) {
+        String path = triggerNode.getProperty("path");
+        String secret = triggerNode.getProperty("secret_token");
+        if (path == null || path.isEmpty()) path = "/webhook";
+        addLog("Webhook Trigger: listening on " + path);
+        Snackbar.make(canvas, "Webhook aktif di " + path + " (gunakan port 8080)", Snackbar.LENGTH_LONG).show();
+    }
+
+    private void startManualTrigger(FlowNode triggerNode) {
+        String inputData = triggerNode.getProperty("input_data");
+        if (inputData == null) inputData = "{}";
+        addLog("Manual Trigger: dijalankan");
+        Map<String, String> msgData = new HashMap<>();
+        msgData.put("text", "manual");
+        msgData.put("chat.id", "0");
+        msgData.put("message_id", "0");
+        msgData.put("date", String.valueOf(System.currentTimeMillis() / 1000));
+        msgData.put("trigger.type", "manual");
+        msgData.put("trigger.input", inputData);
+        currentMsgData = msgData;
+        processFlowFromNode(triggerNode, "0", "system", inputData);
+    }
+
+    private void processFlowFromNode(FlowNode triggerNode, String chatId, String userName, String text) {
+        for (Connection conn : workflow.getConnections()) {
+            if (conn.getSourceNodeId().equals(triggerNode.getId())) {
+                FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
+                if (next != null) {
+                    executeNode(next, chatId, userName, text);
+                }
+            }
+        }
+    }
+
+    private void executeNode(FlowNode node, String chatId, String userName, String text) {
+        addLog("Eksekusi node: " + node.getLabel());
+
+        String token = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString("bot_token", "");
+        String methodName = node.getProperty("_method");
+
+        TelegramMethod method = findMethodDef(methodName);
+        if (method == null && methodName == null) {
+            method = findMethodByLabel(node.getLabel());
+        }
+
+        if (method == null) {
+            final String unknown = methodName != null ? methodName : node.getLabel();
+            runOnUiThread(() -> Snackbar.make(canvas,
+                    "Method tidak dikenal: " + unknown, Snackbar.LENGTH_SHORT).show());
+            return;
+        }
+
+        if (methodName == null) {
+            node.putProperty("_method", method.apiName);
+        }
+
+        switch (node.getType()) {
+            case CONDITION: {
+                boolean conditionMet = execCondition(method, node, text);
+                for (Connection conn : workflow.getConnections()) {
+                    if (conn.getSourceNodeId().equals(node.getId())
+                            && conn.getConditionResult() == conditionMet) {
+                        FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
+                        if (next != null) executeNode(next, chatId, userName, text);
+                    }
+                }
+                break;
+            }
+            case OUTPUT:
+            case ACTION: {
+                if ("log".equals(methodName)) {
+                    String msg = node.getProperty("message");
+                    String raw = msg != null && !msg.trim().isEmpty() ? msg : text;
+                    final String logged = resolveTemplate(raw, text, chatId, userName);
+                    addLog(logged);
+                    runOnUiThread(() -> Snackbar.make(canvas,
+                            "Log: " + logged, Snackbar.LENGTH_SHORT).show());
+                } else if ("ai_chat".equals(methodName)) {
+                    execAiChat(node, chatId, userName, text);
+                } else if ("_return".equals(methodName)) {
+                    addLog("Return: flow berhenti");
+                } else if (methodName != null && methodName.startsWith("_phone_")) {
+                    execPhoneAction(node, method, chatId, userName, text);
+                } else if (methodName != null && methodName.startsWith("_")) {
+                    execLocalAction(node, method, chatId, userName, text);
+                } else {
+                    Map<String, String> params = new HashMap<>();
+                    for (ParamDef p : method.params) {
+                        String val = node.getProperty(p.name);
+                        if (val == null || val.trim().isEmpty()) {
+                            if (p.defaultValue != null) val = p.defaultValue;
+                        }
+                        val = resolveTemplate(val, text, chatId, userName);
+                        if (val != null && !val.trim().isEmpty()) {
+                            params.put(p.name, val);
+                        }
+                    }
+                    if (!params.containsKey("chat_id") || params.get("chat_id").trim().isEmpty()) {
+                        params.put("chat_id", chatId);
+                    }
+                    execApiCall(token, method, params);
+                }
+                break;
+            }
+        }
+    }
+
+    private void execAiChat(FlowNode node, String chatId, String userName, String text) {
+        String promptTemplate = node.getProperty("prompt_template");
+        if (promptTemplate == null || promptTemplate.trim().isEmpty()) {
+            promptTemplate = "{{text}}";
+        }
+        final String providerId;
+        String rawProviderId = node.getProperty("provider");
+        if (rawProviderId == null || rawProviderId.trim().isEmpty()) {
+            providerId = "openai";
+        } else {
+            providerId = rawProviderId;
+        }
+        String model = node.getProperty("model");
+        String systemPrompt = node.getProperty("system_prompt");
+        String customEndpoint = node.getProperty("custom_endpoint");
+        String tempStr = node.getProperty("temperature");
+        final float temperature = tempStr != null ? Float.parseFloat(tempStr) : 0.7f;
+        String maxTokensStr = node.getProperty("max_tokens");
+        final int maxTokens = maxTokensStr != null ? Integer.parseInt(maxTokensStr) : 1024;
+
+        final String prompt = resolveTemplate(promptTemplate, text, chatId, userName);
+
+        AiProvider[] providers = AiProvider.getBuiltInProviders();
+        AiProvider foundProvider = null;
+        for (AiProvider p : providers) {
+            if (p.id.equals(providerId)) {
+                foundProvider = p;
+                break;
+            }
+        }
+        if (foundProvider == null) {
+            runOnUiThread(() -> Snackbar.make(canvas,
+                    "Provider tidak dikenal: " + providerId, Snackbar.LENGTH_SHORT).show());
+            return;
+        }
+
+        final AiProvider provider = foundProvider;
+
+        String apiKeyRaw = "";
+        if (provider.needsApiKey) {
+            apiKeyRaw = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString("ai_key_" + providerId, "");
+            if (apiKeyRaw.isEmpty()) {
+                runOnUiThread(() -> Snackbar.make(canvas,
+                        "API key untuk " + provider.name + " belum dissetting",
+                        Snackbar.LENGTH_LONG)
+                        .setAction("SETTING", v -> showAiSettings())
+                        .show());
+                return;
+            }
+        }
+        final String apiKey = apiKeyRaw;
+
+        runOnUiThread(() -> Snackbar.make(canvas,
+                "AI Chat: " + provider.name + " ...", Snackbar.LENGTH_SHORT).show());
+
+        final String cId = chatId;
+        final String uName = userName;
+
+        List<AiChatHelper.ToolDefinition> toolDefs = buildAiToolDefs();
+        List<String> history = new ArrayList<>();
+
+        AiChatHelper.chatWithTools(provider, apiKey, prompt, model, systemPrompt,
+                temperature, maxTokens, customEndpoint, toolDefs, history,
+                new AiChatHelper.AiToolCallback() {
+            @Override
+            public void onToolCalls(List<AiChatHelper.ToolCall> calls, Runnable retry) {
+                // Execute only the first/relevant tool call instead of all
+                for (AiChatHelper.ToolCall call : calls) {
+                    JsonObject asstMsg = new JsonObject();
+                    asstMsg.addProperty("role", "assistant");
+                    asstMsg.addProperty("content", (String) null);
+                    JsonArray tcs = new JsonArray();
+                    JsonObject tc = new JsonObject();
+                    tc.addProperty("id", call.id);
+                    tc.addProperty("type", "function");
+                    JsonObject func = new JsonObject();
+                    func.addProperty("name", call.name);
+                    func.addProperty("arguments", call.arguments);
+                    tc.add("function", func);
+                    tcs.add(tc);
+                    asstMsg.add("tool_calls", tcs);
+                    history.add(asstMsg.toString());
+
+                    String result = executeTool(call.name, call.arguments, cId, uName, text);
+
+                    JsonObject toolMsg = new JsonObject();
+                    toolMsg.addProperty("role", "tool");
+                    toolMsg.addProperty("tool_call_id", call.id);
+                    toolMsg.addProperty("content", result != null ? result : "ok");
+                    history.add(toolMsg.toString());
+                    
+                    // Break after executing the first tool call
+                    break;
+                }
+
+                AiChatHelper.continueWithToolResults(provider, apiKey, model,
+                        systemPrompt, temperature, maxTokens, customEndpoint,
+                        toolDefs, history, this);
+            }
+
+            @Override
+            public void onSuccess(String responseText) {
+                addLog("AI: " + responseText);
+                runOnUiThread(() -> {
+                    Snackbar.make(canvas, "AI: " + responseText,
+                            Snackbar.LENGTH_LONG).show();
+                    canvas.triggerPulse();
+                    continueFlow(node, cId, uName, responseText);
+                });
+            }
+
+            @Override
+            public void onError(String error) {
+                runOnUiThread(() -> Snackbar.make(canvas,
+                        "AI Error: " + error, Snackbar.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private List<AiChatHelper.ToolDefinition> buildAiToolDefs() {
+        List<AiChatHelper.ToolDefinition> defs = new ArrayList<>();
+        for (TelegramMethod m : MethodRegistry.getAllMethods()) {
+            if (m.apiName != null && m.apiName.startsWith("_phone_")) {
+                JsonObject params = new JsonObject();
+                params.addProperty("type", "object");
+                JsonObject props = new JsonObject();
+                JsonArray required = new JsonArray();
+                for (ParamDef p : m.params) {
+                    JsonObject prop = new JsonObject();
+                    String jsonType = "string";
+                    if (p.type == ParamDef.ParamType.INTEGER) jsonType = "integer";
+                    else if (p.type == ParamDef.ParamType.FLOAT) jsonType = "number";
+                    else if (p.type == ParamDef.ParamType.BOOLEAN) jsonType = "boolean";
+                    prop.addProperty("type", jsonType);
+                    if (p.hint != null) prop.addProperty("description", p.hint);
+                    props.add(p.name, prop);
+                    if (p.required) required.add(p.name);
+                }
+                params.add("properties", props);
+                params.add("required", required);
+                defs.add(new AiChatHelper.ToolDefinition(m.apiName, m.description, params));
+            }
+        }
+        return defs;
+    }
+
+    private String executeTool(String toolName, String argsJson, String chatId, String userName, String text) {
+        try {
+            JsonObject args = JsonParser.parseString(argsJson).getAsJsonObject();
+
+            switch (toolName) {
+                case "_phone_flashlight": {
+                    String state = args.has("state") ? args.get("state").getAsString() : "on";
+                    boolean on = "on".equalsIgnoreCase(state);
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        if (checkSelfPermission(android.Manifest.permission.CAMERA)
+                                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            return "Izin kamera belum diberikan";
+                        }
+                        android.hardware.camera2.CameraManager cm =
+                                (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+                        String cameraId = null;
+                        for (String id : cm.getCameraIdList()) {
+                            android.hardware.camera2.CameraCharacteristics chars =
+                                    cm.getCameraCharacteristics(id);
+                            Boolean flashAvail = chars.get(
+                                    android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                            if (flashAvail != null && flashAvail) { cameraId = id; break; }
+                        }
+                        if (cameraId != null) {
+                            cm.setTorchMode(cameraId, on);
+                            return on ? "Senter menyala" : "Senter mati";
+                        } else {
+                            return "Tidak ada flash";
+                        }
+                    }
+                    return "API terlalu rendah";
+                }
+                case "_phone_vibrate": {
+                    long dur = args.has("duration") ? args.get("duration").getAsLong() : 500;
+                    android.os.Vibrator vibrator = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
+                    if (vibrator != null && vibrator.hasVibrator()) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            vibrator.vibrate(android.os.VibrationEffect.createOneShot(dur,
+                                    android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+                        } else {
+                            vibrator.vibrate(dur);
+                        }
+                        return "Bergetar " + dur + "ms";
+                    }
+                    return "Tidak ada vibrator";
+                }
+                case "_phone_toast": {
+                    String msg = args.has("message") ? args.get("message").getAsString() : "";
+                    android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show();
+                    return "Toast: " + msg;
+                }
+                case "_phone_battery": {
+                    android.content.IntentFilter ifilter = new android.content.IntentFilter(
+                            android.content.Intent.ACTION_BATTERY_CHANGED);
+                    android.content.Intent batteryStatus = registerReceiver(null, ifilter);
+                    if (batteryStatus != null) {
+                        int level = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+                        int scale = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
+                        int pct = (int) (level * 100.0 / scale);
+                        int status = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1);
+                        String s = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ? "charging" : "not charging";
+                        String plugged = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) > 0 ? "plugged in" : "unplugged";
+                        return "Battery: " + pct + "%, " + s + ", " + plugged;
+                    }
+                    return "Battery info unavailable";
+                }
+                case "_phone_device_info": {
+                    return "Model: " + android.os.Build.MODEL
+                            + ", Android: " + android.os.Build.VERSION.RELEASE
+                            + ", API: " + android.os.Build.VERSION.SDK_INT;
+                }
+                case "_phone_open_url": {
+                    String url = args.has("url") ? args.get("url").getAsString() : "";
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        url = "https://" + url;
+                    }
+                    android.content.Intent intent = new android.content.Intent(
+                            android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    return "Membuka URL: " + url;
+                }
+                case "_phone_clipboard_set": {
+                    String clipText = args.has("text") ? args.get("text").getAsString() : "";
+                    android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                            "TgFlowBot", clipText));
+                    return "Clipboard: " + clipText;
+                }
+                case "_phone_volume": {
+                    int level = args.has("level") ? args.get("level").getAsInt() : 50;
+                    android.media.AudioManager audio =
+                            (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+                    int maxVol = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+                    audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC,
+                            level * maxVol / 100, 0);
+                    return "Volume: " + level + "%";
+                }
+                case "_phone_brightness": {
+                    int brightness = args.has("level") ? args.get("level").getAsInt() : 128;
+                    if (brightness < 0) brightness = 0;
+                    if (brightness > 255) brightness = 255;
+                    if (android.provider.Settings.System.canWrite(this)) {
+                        android.provider.Settings.System.putInt(getContentResolver(),
+                                android.provider.Settings.System.SCREEN_BRIGHTNESS, brightness);
+                        return "Brightness: " + brightness;
+                    }
+                    return "Izin write_settings belum diberikan";
+                }
+                default:
+                    return "Unknown tool: " + toolName;
+            }
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    private void continueFlow(FlowNode fromNode, String chatId, String userName, String text) {
+        for (Connection conn : workflow.getConnections()) {
+            if (conn.getSourceNodeId().equals(fromNode.getId())) {
+                FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
+                if (next != null) {
+                    executeNode(next, chatId, userName, text);
+                }
+            }
+        }
+    }
+
+    private boolean execCondition(TelegramMethod method, FlowNode node, String text) {
+        String methodName = method.apiName;
+        String value = node.getProperty("value");
+        String pattern = node.getProperty("pattern");
+        String type = node.getProperty("type");
+        String mediaType = node.getProperty("media_type");
+        String cs = node.getProperty("case_sensitive");
+        boolean caseSensitive = "true".equals(cs);
+
+        switch (methodName) {
+            case "contains": {
+                if (value == null || value.isEmpty()) return true;
+                return caseSensitive ? text.contains(value) :
+                        text.toLowerCase().contains(value.toLowerCase());
+            }
+            case "equals": {
+                if (value == null) return false;
+                return caseSensitive ? text.equals(value) :
+                        text.equalsIgnoreCase(value);
+            }
+            case "startsWith": {
+                if (value == null || value.isEmpty()) return true;
+                return caseSensitive ? text.startsWith(value) :
+                        text.toLowerCase().startsWith(value.toLowerCase());
+            }
+            case "matches": {
+                if (pattern == null || pattern.isEmpty()) return true;
+                try {
+                    int flags = caseSensitive ? 0 : java.util.regex.Pattern.CASE_INSENSITIVE;
+                    return java.util.regex.Pattern.compile(pattern, flags).matcher(text).find();
+                } catch (Exception e) {
+                    return false;
+                }
+            }
+            case "chatType": {
+                return type != null && type.equals(node.getProperty("_chat_type"));
+            }
+            case "hasMedia": {
+                return mediaType != null && !mediaType.isEmpty();
+            }
+            case "alwaysTrue": {
+                return true;
+            }
+            case "_compare": {
+                String aRaw = resolveTemplate(node.getProperty("a"), text, null, null);
+                String bRaw = resolveTemplate(node.getProperty("b"), text, null, null);
+                String op = node.getProperty("operator");
+                if (op == null) op = "==";
+                double a = 0, b = 0;
+                try { a = Double.parseDouble(aRaw != null ? aRaw : "0"); } catch (Exception ignored) {}
+                try { b = Double.parseDouble(bRaw != null ? bRaw : "0"); } catch (Exception ignored) {}
+                switch (op) {
+                    case "!=": return a != b;
+                    case ">":  return a > b;
+                    case "<":  return a < b;
+                    case ">=": return a >= b;
+                    case "<=": return a <= b;
+                    default:   return a == b;
+                }
+            }
+            case "alwaysFalse": {
+                return false;
+            }
+            default:
+                return true;
+        }
+    }
+
+    private void execApiCall(String token, TelegramMethod method, Map<String, String> params) {
+        String inputType = params.get("input_type");
+        boolean isUpload = "upload".equals(inputType);
+        String[] mediaMethods = {"sendPhoto", "sendVideo", "sendDocument", "sendAudio", "sendVoice", "sendAnimation"};
+        boolean isMedia = java.util.Arrays.asList(mediaMethods).contains(method.apiName);
+        
+        if (isUpload && isMedia) {
+            pickFileAndUpload(token, method, params);
+            return;
+        }
+        
+        new Thread(() -> {
+            try {
+                okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+                okhttp3.FormBody.Builder formBuilder = new okhttp3.FormBody.Builder();
+                for (Map.Entry<String, String> e : params.entrySet()) {
+                    if (!e.getKey().equals("input_type")) {
+                        formBuilder.add(e.getKey(), e.getValue());
+                    }
+                }
+                String url = "https://api.telegram.org/bot" + token + "/" + method.apiName;
+                okhttp3.Request request = new okhttp3.Request.Builder()
+                        .url(url).post(formBuilder.build()).build();
+                okhttp3.Response response = client.newCall(request).execute();
+                String body = response.body() != null ? response.body().string() : "";
+                response.close();
+                handleApiResponse(method, body);
+            } catch (Exception e) {
+                runOnUiThread(() -> Snackbar.make(canvas,
+                        "Error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+            }
+        }).start();
+    }
+    
+    private void handleApiResponse(TelegramMethod method, String body) {
+        try {
+            com.google.gson.JsonObject json =
+                    new com.google.gson.JsonParser().parse(body).getAsJsonObject();
+            if (json.get("ok").getAsBoolean()) {
+                if (method.apiName.equals("getChat") || method.apiName.equals("getMe")) {
+                    final String result = json.get("result").toString();
+                    addLog("[API] " + method.apiName + ": " + result);
+                }
+                runOnUiThread(() -> {
+                    canvas.triggerPulse();
+                    Snackbar.make(canvas,
+                            method.displayName + " berhasil", Snackbar.LENGTH_SHORT).show();
+                });
+            } else {
+                String desc = json.has("description") ?
+                        json.get("description").getAsString() : "Unknown error";
+                runOnUiThread(() -> Snackbar.make(canvas,
+                        "Gagal: " + desc, Snackbar.LENGTH_SHORT).show());
+            }
+        } catch (Exception e) {
+            runOnUiThread(() -> Snackbar.make(canvas,
+                    "Error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+        }
+    }
+
+    private void pickFileAndUpload(String token, TelegramMethod method, Map<String, String> params) {
+        String acceptType;
+        switch (method.apiName) {
+            case "sendPhoto": acceptType = "image/*"; break;
+            case "sendVideo": acceptType = "video/*"; break;
+            case "sendAudio": acceptType = "audio/*"; break;
+            case "sendVoice": acceptType = "audio/*"; break;
+            case "sendAnimation": acceptType = "image/gif"; break;
+            case "sendDocument": acceptType = "*/*"; break;
+            default: acceptType = "*/*";
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(acceptType);
+        runOnUiThread(() -> {
+            fileUploadParams = params;
+            fileUploadToken = token;
+            fileUploadMethod = method;
+            startActivityForResult(intent, REQUEST_PICK_FILE);
+        });
+    }
+
+    private static final int REQUEST_PICK_FILE = 2001;
+    private Map<String, String> fileUploadParams;
+    private String fileUploadToken;
+    private TelegramMethod fileUploadMethod;
+
+    private void uploadFileWithUri(Uri uri) {
+        new Thread(() -> {
+            try {
+                okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+                java.io.InputStream is = getContentResolver().openInputStream(uri);
+                if (is == null) {
+                    runOnUiThread(() -> Snackbar.make(canvas, "Gagal buka file", Snackbar.LENGTH_SHORT).show());
+                    return;
+                }
+                byte[] fileBytes = is.readAllBytes();
+                is.close();
+                String fileName = getFileName(uri);
+                String mimeType = getContentResolver().getType(uri);
+                if (mimeType == null) mimeType = "application/octet-stream";
+
+                String fieldName = getMediaFieldName(fileUploadMethod.apiName);
+                okhttp3.RequestBody fileBody = okhttp3.RequestBody.create(fileBytes, okhttp3.MediaType.parse(mimeType));
+                okhttp3.MultipartBody.Builder mpBuilder = new okhttp3.MultipartBody.Builder()
+                        .setType(okhttp3.MultipartBody.FORM)
+                        .addFormDataPart(fieldName, fileName, fileBody);
+
+                for (Map.Entry<String, String> e : fileUploadParams.entrySet()) {
+                    String key = e.getKey();
+                    if (isMediaParam(key)) continue;
+                    mpBuilder.addFormDataPart(key, e.getValue());
+                }
+
+                String url = "https://api.telegram.org/bot" + fileUploadToken + "/" + fileUploadMethod.apiName;
+                okhttp3.Request request = new okhttp3.Request.Builder()
+                        .url(url).post(mpBuilder.build()).build();
+                okhttp3.Response response = client.newCall(request).execute();
+                String body = response.body() != null ? response.body().string() : "";
+                response.close();
+                handleApiResponse(fileUploadMethod, body);
+            } catch (Exception e) {
+                runOnUiThread(() -> Snackbar.make(canvas,
+                        "Upload error: " + e.getMessage(), Snackbar.LENGTH_SHORT).show());
+            }
+        }).start();
+    }
+
+    private boolean isMediaParam(String key) {
+        return key.equals("input_type") || key.equals("caption") || key.equals("parse_mode")
+                || key.equals("disable_notification") || key.equals("protect_content")
+                || key.equals("message_thread_id") || key.equals("reply_to_message_id")
+                || key.equals("allow_paid_broadcast") || key.equals("duration")
+                || key.equals("width") || key.equals("height") || key.equals("has_spoiler")
+                || key.equals("supports_streaming") || key.equals("thumbnail");
+    }
+
+    private String getFileName(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            try (android.database.Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex >= 0) result = cursor.getString(nameIndex);
+                }
+            }
+        }
+        if (result == null) result = uri.getLastPathSegment();
+        return result != null ? result : "file";
+    }
+
+    private String getMediaFieldName(String apiName) {
+        switch (apiName) {
+            case "sendPhoto": return "photo";
+            case "sendVideo": return "video";
+            case "sendDocument": return "document";
+            case "sendAudio": return "audio";
+            case "sendVoice": return "voice";
+            case "sendAnimation": return "animation";
+            default: return "document";
+        }
+    }
+
+    private void flattenJson(String prefix, com.google.gson.JsonObject obj, Map<String, String> out) {
+        for (java.util.Map.Entry<String, com.google.gson.JsonElement> e : obj.entrySet()) {
+            String key = prefix != null && !prefix.isEmpty() ? prefix + "." + e.getKey() : e.getKey();
+            com.google.gson.JsonElement val = e.getValue();
+            if (val.isJsonPrimitive()) {
+                out.put(key, val.getAsString());
+            } else if (val.isJsonObject()) {
+                flattenJson(key, val.getAsJsonObject(), out);
+            }
+        }
+    }
+
+    private String resolveTemplate(String val, String text, String chatId, String userName) {
+        if (val == null) return null;
+        val = val.replace("{{text}}", text != null ? text : "");
+        val = val.replace("{{message}}", text != null ? text : "");
+        val = val.replace("{{chatId}}", chatId != null ? chatId : "");
+        val = val.replace("{{username}}", userName != null ? userName : "");
+        for (java.util.Map.Entry<String, String> e : currentMsgData.entrySet()) {
+            String placeholder = "{{" + e.getKey() + "}}";
+            if (val.contains(placeholder)) {
+                val = val.replace(placeholder, e.getValue() != null ? e.getValue() : "");
+            }
+        }
+        for (java.util.Map.Entry<String, String> e : variables.entrySet()) {
+            String placeholder = "{{$" + e.getKey() + "}}";
+            if (val.contains(placeholder)) {
+                val = val.replace(placeholder, e.getValue() != null ? e.getValue() : "");
+            }
+        }
+        return val;
+    }
+
+    private void execLocalAction(FlowNode node, TelegramMethod method, String chatId, String userName, String text) {
+        runOnUiThread(() -> Snackbar.make(canvas, method.displayName + " ...", Snackbar.LENGTH_SHORT).show());
+
+        execLocalActionAsync(node, method, chatId, userName, text);
+    }
+
+    private void execLocalActionAsync(FlowNode node, TelegramMethod method, String chatId, String userName, String text) {
+        new Thread(() -> {
+            String result = text;
+
+            switch (method.apiName) {
+                case "_add":
+                case "_subtract":
+                case "_multiply":
+                case "_divide":
+                case "_modulo": {
+                    String aRaw = resolveTemplate(node.getProperty("a"), text, chatId, userName);
+                    String bRaw = resolveTemplate(node.getProperty("b"), text, chatId, userName);
+                    double a = 0, b = 0;
+                    try { a = Double.parseDouble(aRaw); } catch (Exception ignored) {}
+                    try { b = Double.parseDouble(bRaw); } catch (Exception ignored) {}
+                    double val;
+                    switch (method.apiName) {
+                        case "_add": val = a + b; break;
+                        case "_subtract": val = a - b; break;
+                        case "_multiply": val = a * b; break;
+                        case "_divide": val = b != 0 ? a / b : 0; break;
+                        case "_modulo": val = b != 0 ? a % b : 0; break;
+                        default: val = 0;
+                    }
+                    result = String.valueOf(val);
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_random": {
+                    String minRaw = resolveTemplate(node.getProperty("min"), text, chatId, userName);
+                    String maxRaw = resolveTemplate(node.getProperty("max"), text, chatId, userName);
+                    double min = 0, max = 100;
+                    try { min = Double.parseDouble(minRaw); } catch (Exception ignored) {}
+                    try { max = Double.parseDouble(maxRaw); } catch (Exception ignored) {}
+                    double val = min + (max - min) * java.lang.Math.random();
+                    result = String.valueOf(val);
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_text_append": {
+                    String a = resolveTemplate(node.getProperty("a"), text, chatId, userName);
+                    String b = resolveTemplate(node.getProperty("b"), text, chatId, userName);
+                    result = (a != null ? a : "") + (b != null ? b : "");
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_text_replace": {
+                    String inputText = resolveTemplate(node.getProperty("text"), text, chatId, userName);
+                    String search = resolveTemplate(node.getProperty("search"), text, chatId, userName);
+                    String replace = resolveTemplate(node.getProperty("replace"), text, chatId, userName);
+                    if (inputText != null && search != null) {
+                        result = inputText.replace(search, replace != null ? replace : "");
+                    }
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_set_variable": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String val = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    if (key != null && !key.isEmpty()) {
+                        variables.put(key, val != null ? val : "");
+                        addLog("Set $" + key + " = " + (val != null ? val : ""));
+                    }
+                    break;
+                }
+                case "_get_variable": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String defVal = resolveTemplate(node.getProperty("default"), text, chatId, userName);
+                    if (key != null && variables.containsKey(key)) {
+                        result = variables.get(key);
+                    } else {
+                        result = defVal != null ? defVal : "";
+                    }
+                    addLog("Get $" + key + " = " + result);
+                    break;
+                }
+                case "_delay": {
+                    String msRaw = resolveTemplate(node.getProperty("ms"), text, chatId, userName);
+                    long ms = 1000;
+                    try { ms = Long.parseLong(msRaw); } catch (Exception ignored) {}
+                    try { Thread.sleep(ms); } catch (Exception ignored) {}
+                    addLog("Delay " + ms + "ms");
+                    break;
+                }
+                case "_var_add":
+                case "_var_subtract":
+                case "_var_multiply":
+                case "_var_divide": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String valRaw = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    double current = 0;
+                    if (variables.containsKey(key)) {
+                        try { current = Double.parseDouble(variables.get(key)); } catch (Exception ignored) {}
+                    }
+                    double delta = 0;
+                    try { delta = Double.parseDouble(valRaw); } catch (Exception ignored) {}
+                    switch (method.apiName) {
+                        case "_var_add": current += delta; break;
+                        case "_var_subtract": current -= delta; break;
+                        case "_var_multiply": current *= delta; break;
+                        case "_var_divide": if (delta != 0) current /= delta; break;
+                    }
+                    variables.put(key, String.valueOf(current));
+                    result = String.valueOf(current);
+                    addLog(method.displayName + " $" + key + " = " + result);
+                    break;
+                }
+                case "_var_append": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String val = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    String existing = variables.containsKey(key) ? variables.get(key) : "";
+                    String appended = existing + (val != null ? val : "");
+                    variables.put(key, appended);
+                    result = appended;
+                    addLog(method.displayName + " $" + key + " = " + result);
+                    break;
+                }
+                case "_var_clear": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    if (key != null && variables.containsKey(key)) {
+                        variables.put(key, "");
+                        addLog("Var Clear $" + key);
+                    }
+                    break;
+                }
+                case "_var_delete": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    if (key != null) {
+                        variables.remove(key);
+                        addLog("Var Delete $" + key);
+                    }
+                    break;
+                }
+                case "_list_create": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String items = resolveTemplate(node.getProperty("items"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    if (items == null) items = "";
+                    String[] parts = items.split(",", -1);
+                    ArrayList<String> list = new ArrayList<>();
+                    for (String p : parts) list.add(p.trim());
+                    variables.put(key, joinList(list));
+                    addLog("List Create: " + list.size() + " items");
+                    break;
+                }
+                case "_list_add": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String item = resolveTemplate(node.getProperty("item"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    ArrayList<String> list = getListVar(key);
+                    list.add(item != null ? item : "");
+                    variables.put(key, joinList(list));
+                    addLog("List Add: " + item);
+                    break;
+                }
+                case "_list_remove": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String idxRaw = resolveTemplate(node.getProperty("index"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    ArrayList<String> list = getListVar(key);
+                    int idx = 0;
+                    try { idx = Integer.parseInt(idxRaw); } catch (Exception ignored) {}
+                    if (idx >= 0 && idx < list.size()) {
+                        String removed = list.remove(idx);
+                        variables.put(key, joinList(list));
+                        addLog("List Remove index " + idx + ": " + removed);
+                    }
+                    break;
+                }
+                case "_list_get": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String idxRaw = resolveTemplate(node.getProperty("index"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    ArrayList<String> list = getListVar(key);
+                    int idx = 0;
+                    try { idx = Integer.parseInt(idxRaw); } catch (Exception ignored) {}
+                    if (idx >= 0 && idx < list.size()) {
+                        result = list.get(idx);
+                    }
+                    addLog("List Get [" + idx + "] = " + result);
+                    break;
+                }
+                case "_list_size": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    ArrayList<String> list = getListVar(key);
+                    result = String.valueOf(list.size());
+                    addLog("List Size: " + result);
+                    break;
+                }
+                case "_list_clear": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    if (key != null) {
+                        variables.put(key, "");
+                        addLog("List Clear");
+                    }
+                    break;
+                }
+                case "_list_join": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    String sep = resolveTemplate(node.getProperty("separator"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    if (sep == null) sep = ", ";
+                    ArrayList<String> list = getListVar(key);
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < list.size(); i++) {
+                        if (i > 0) sb.append(sep);
+                        sb.append(list.get(i));
+                    }
+                    result = sb.toString();
+                    addLog("List Join: " + result);
+                    break;
+                }
+                case "_list_shuffle": {
+                    String key = resolveTemplate(node.getProperty("key"), text, chatId, userName);
+                    if (key == null || key.isEmpty()) break;
+                    ArrayList<String> list = getListVar(key);
+                    java.util.Collections.shuffle(list);
+                    variables.put(key, joinList(list));
+                    addLog("List Shuffle");
+                    break;
+                }
+                case "_repeat": {
+                    String cntRaw = resolveTemplate(node.getProperty("count"), text, chatId, userName);
+                    int count = 3;
+                    try { count = Integer.parseInt(cntRaw); } catch (Exception ignored) {}
+                    String counterKey = "_repeat_counter_" + chatId + "_" + node.getId();
+                    String remainingRaw = variables.get(counterKey);
+                    int remaining;
+                    if (remainingRaw == null) {
+                        remaining = count;
+                    } else {
+                        try { remaining = Integer.parseInt(remainingRaw); } catch (Exception ignored) { remaining = 0; }
+                    }
+                    if (remaining > 0) {
+                        remaining--;
+                        variables.put(counterKey, String.valueOf(remaining));
+                        variables.put("_loop_index", String.valueOf(count - remaining - 1));
+                        variables.put("_loop_total", String.valueOf(count));
+                        addLog("Repeat: iterasi " + (count - remaining) + "/" + count);
+                    } else {
+                        addLog("Repeat: selesai");
+                    }
+                    result = text;
+                    break;
+                }
+                case "_wait_until": {
+                    String varName = resolveTemplate(node.getProperty("condition_var"), text, chatId, userName);
+                    String expected = resolveTemplate(node.getProperty("expected"), text, chatId, userName);
+                    String timeoutRaw = resolveTemplate(node.getProperty("timeout_ms"), text, chatId, userName);
+                    String intervalRaw = resolveTemplate(node.getProperty("interval_ms"), text, chatId, userName);
+                    long timeoutMs = 5000, intervalMs = 200;
+                    try { timeoutMs = Long.parseLong(timeoutRaw); } catch (Exception ignored) {}
+                    try { intervalMs = Long.parseLong(intervalRaw); } catch (Exception ignored) {}
+                    long start = System.currentTimeMillis();
+                    boolean found = false;
+                    while (System.currentTimeMillis() - start < timeoutMs) {
+                        String val = variables.get(varName);
+                        if ((val != null && val.equals(expected)) || (val == null && (expected == null || expected.isEmpty()))) {
+                            found = true;
+                            break;
+                        }
+                        try { Thread.sleep(intervalMs); } catch (Exception ignored) {}
+                    }
+                    addLog(found ? "Wait Until: kondisi terpenuhi" : "Wait Until: timeout");
+                    result = found ? "true" : "false";
+                    break;
+                }
+                case "_loop_break": {
+                    addLog("Loop Break");
+                    runOnUiThread(() -> {
+                        for (Map.Entry<String, String> e : variables.entrySet()) {
+                            if (e.getKey().startsWith("_repeat_counter_")) {
+                                variables.put(e.getKey(), "0");
+                            }
+                        }
+                    });
+                    break;
+                }
+                case "_power": {
+                    String aRaw = resolveTemplate(node.getProperty("a"), text, chatId, userName);
+                    String bRaw = resolveTemplate(node.getProperty("b"), text, chatId, userName);
+                    double a = 0, b = 0;
+                    try { a = Double.parseDouble(aRaw); } catch (Exception ignored) {}
+                    try { b = Double.parseDouble(bRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.pow(a, b));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_sqrt": {
+                    String valRaw = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    double v = 0;
+                    try { v = Double.parseDouble(valRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.sqrt(v));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_abs": {
+                    String valRaw = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    double v = 0;
+                    try { v = Double.parseDouble(valRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.abs(v));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_round": {
+                    String valRaw = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    double v = 0;
+                    try { v = Double.parseDouble(valRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.round(v));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_floor": {
+                    String valRaw = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    double v = 0;
+                    try { v = Double.parseDouble(valRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.floor(v));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_ceil": {
+                    String valRaw = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    double v = 0;
+                    try { v = Double.parseDouble(valRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.ceil(v));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_min": {
+                    String aRaw = resolveTemplate(node.getProperty("a"), text, chatId, userName);
+                    String bRaw = resolveTemplate(node.getProperty("b"), text, chatId, userName);
+                    double a = 0, b = 0;
+                    try { a = Double.parseDouble(aRaw); } catch (Exception ignored) {}
+                    try { b = Double.parseDouble(bRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.min(a, b));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_max": {
+                    String aRaw = resolveTemplate(node.getProperty("a"), text, chatId, userName);
+                    String bRaw = resolveTemplate(node.getProperty("b"), text, chatId, userName);
+                    double a = 0, b = 0;
+                    try { a = Double.parseDouble(aRaw); } catch (Exception ignored) {}
+                    try { b = Double.parseDouble(bRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.max(a, b));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_clamp": {
+                    String valRaw = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    String minRaw = resolveTemplate(node.getProperty("min"), text, chatId, userName);
+                    String maxRaw = resolveTemplate(node.getProperty("max"), text, chatId, userName);
+                    double v = 0, min = 0, max = 100;
+                    try { v = Double.parseDouble(valRaw); } catch (Exception ignored) {}
+                    try { min = Double.parseDouble(minRaw); } catch (Exception ignored) {}
+                    try { max = Double.parseDouble(maxRaw); } catch (Exception ignored) {}
+                    result = String.valueOf(Math.max(min, Math.min(max, v)));
+                    addLog(method.displayName + ": " + result);
+                    break;
+                }
+                case "_file_read": {
+                    String path = resolveTemplate(node.getProperty("path"), text, chatId, userName);
+                    if (path != null) {
+                        try {
+                            java.io.File file = new java.io.File(path);
+                            if (file.exists()) {
+                                result = new String(java.nio.file.Files.readAllBytes(file.toPath()));
+                            } else {
+                                result = "";
+                                addLog("File not found: " + path);
+                            }
+                        } catch (Exception e) {
+                            result = "";
+                            addLog("File Read error: " + e.getMessage());
+                        }
+                        addLog("File Read: " + path);
+                    }
+                    break;
+                }
+                case "_file_write": {
+                    String path = resolveTemplate(node.getProperty("path"), text, chatId, userName);
+                    String content = resolveTemplate(node.getProperty("content"), text, chatId, userName);
+                    if (path != null && content != null) {
+                        try {
+                            java.io.File file = new java.io.File(path);
+                            file.getParentFile().mkdirs();
+                            java.nio.file.Files.write(file.toPath(), content.getBytes());
+                            addLog("File Write: " + path);
+                        } catch (Exception e) {
+                            addLog("File Write error: " + e.getMessage());
+                        }
+                    }
+                    break;
+                }
+                case "_file_append": {
+                    String path = resolveTemplate(node.getProperty("path"), text, chatId, userName);
+                    String content = resolveTemplate(node.getProperty("content"), text, chatId, userName);
+                    if (path != null && content != null) {
+                        try {
+                            java.io.File file = new java.io.File(path);
+                            file.getParentFile().mkdirs();
+                            java.nio.file.Files.write(file.toPath(), content.getBytes(),
+                                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                            addLog("File Append: " + path);
+                        } catch (Exception e) {
+                            addLog("File Append error: " + e.getMessage());
+                        }
+                    }
+                    break;
+                }
+                case "_file_delete": {
+                    String path = resolveTemplate(node.getProperty("path"), text, chatId, userName);
+                    if (path != null) {
+                        java.io.File file = new java.io.File(path);
+                        if (file.delete()) {
+                            addLog("File Delete: " + path);
+                        } else {
+                            addLog("File Delete gagal: " + path);
+                        }
+                    }
+                    break;
+                }
+                case "_file_exists": {
+                    String path = resolveTemplate(node.getProperty("path"), text, chatId, userName);
+                    if (path != null) {
+                        result = String.valueOf(new java.io.File(path).exists());
+                        addLog("File Exists: " + path + " = " + result);
+                    }
+                    break;
+                }
+                case "_file_list": {
+                    String dir = resolveTemplate(node.getProperty("dir"), text, chatId, userName);
+                    if (dir != null) {
+                        java.io.File folder = new java.io.File(dir);
+                        java.io.File[] files = folder.listFiles();
+                        if (files != null) {
+                            StringBuilder sb = new StringBuilder();
+                            for (int i = 0; i < files.length; i++) {
+                                if (i > 0) sb.append("\n");
+                                sb.append(files[i].getName()).append(files[i].isDirectory() ? "/" : "");
+                            }
+                            result = sb.toString();
+                            addLog("File List: " + files.length + " entries");
+                        } else {
+                            result = "";
+                            addLog("File List: direktori tidak ditemukan");
+                        }
+                    }
+                    break;
+                }
+                case "_http_request": {
+                    String httpMethod = resolveTemplate(node.getProperty("method"), text, chatId, userName);
+                    String url = resolveTemplate(node.getProperty("url"), text, chatId, userName);
+                    String headersJson = resolveTemplate(node.getProperty("headers"), text, chatId, userName);
+                    String reqBody = resolveTemplate(node.getProperty("body"), text, chatId, userName);
+                    if (httpMethod == null || httpMethod.isEmpty()) httpMethod = "GET";
+                    if (url == null || url.isEmpty()) break;
+                    try {
+                        okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+                        okhttp3.Request.Builder builder = new okhttp3.Request.Builder().url(url);
+                        if (headersJson != null && !headersJson.isEmpty()) {
+                            try {
+                                com.google.gson.JsonObject hdrs = com.google.gson.JsonParser.parseString(headersJson).getAsJsonObject();
+                                for (String k : hdrs.keySet()) {
+                                    builder.addHeader(k, hdrs.get(k).getAsString());
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        if (httpMethod.equalsIgnoreCase("GET")) {
+                            builder.get();
+                        } else {
+                            okhttp3.MediaType mediaType = okhttp3.MediaType.parse("application/json; charset=utf-8");
+                            okhttp3.RequestBody body = okhttp3.RequestBody.create(
+                                    reqBody != null ? reqBody : "", mediaType);
+                            switch (httpMethod.toUpperCase()) {
+                                case "POST": builder.post(body); break;
+                                case "PUT": builder.put(body); break;
+                                case "DELETE": builder.delete(body); break;
+                                case "PATCH": builder.patch(body); break;
+                                case "HEAD": builder.head(); break;
+                                default: builder.get();
+                            }
+                        }
+                        okhttp3.Response response = client.newCall(builder.build()).execute();
+                        result = response.body() != null ? response.body().string() : "";
+                        response.close();
+                        addLog("HTTP " + httpMethod + " " + url + " -> " + result.length() + " chars");
+                    } catch (Exception e) {
+                        result = "";
+                        addLog("HTTP Error: " + e.getMessage());
+                    }
+                    break;
+                }
+                case "_log": {
+                    String msg = resolveTemplate(node.getProperty("message"), text, chatId, userName);
+                    if (msg == null || msg.isEmpty()) msg = text;
+                    addLog("LOG: " + msg);
+                    result = msg;
+                    break;
+                }
+            }
+
+            final String finalResult = result;
+            runOnUiThread(() -> {
+                canvas.triggerPulse();
+                continueFlow(node, chatId, userName, finalResult);
+            });
+        }).start();
+    }
+
+    private String joinList(ArrayList<String> list) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) sb.append("||");
+            sb.append(list.get(i));
+        }
+        return sb.toString();
+    }
+
+    private ArrayList<String> getListVar(String key) {
+        String raw = variables.get(key);
+        if (raw == null || raw.isEmpty()) return new ArrayList<>();
+        String[] parts = raw.split("\\|\\|", -1);
+        ArrayList<String> list = new ArrayList<>();
+        for (String p : parts) list.add(p);
+        return list;
+    }
+
+    private void execPhoneAction(FlowNode node, TelegramMethod method, String chatId, String userName, String text) {
+        runOnUiThread(() -> {
+            String methodName = method.apiName;
+            addLog("Phone: " + method.displayName);
+
+            switch (methodName) {
+                case "_phone_flashlight": {
+                    String state = resolveTemplate(node.getProperty("state"), text, chatId, userName);
+                    boolean on = "on".equalsIgnoreCase(state);
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            Snackbar.make(canvas, "Izin kamera diperlukan untuk senter", Snackbar.LENGTH_LONG)
+                                    .setAction("IZIN", v -> requestPermissions(
+                                            new String[]{android.Manifest.permission.CAMERA}, 1001))
+                                    .show();
+                            return;
+                        }
+                        try {
+                            android.hardware.camera2.CameraManager cm = (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+                            String cameraId = null;
+                            for (String id : cm.getCameraIdList()) {
+                                android.hardware.camera2.CameraCharacteristics chars = cm.getCameraCharacteristics(id);
+                                Boolean flashAvail = chars.get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                                if (flashAvail != null && flashAvail) { cameraId = id; break; }
+                            }
+                            if (cameraId != null) {
+                                cm.setTorchMode(cameraId, on);
+                                addLog(on ? "Senter menyala" : "Senter mati");
+                            } else {
+                                addLog("Tidak ada flash tersedia");
+                            }
+                        } catch (Exception e) {
+                            addLog("Gagal senter: " + e.getMessage());
+                        }
+                    }
+                    break;
+                }
+                case "_phone_vibrate": {
+                    String durStr = resolveTemplate(node.getProperty("duration"), text, chatId, userName);
+                    long dur = 500;
+                    try { dur = Long.parseLong(durStr); } catch (Exception ignored) {}
+                    android.os.Vibrator vibrator = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
+                    if (vibrator != null && vibrator.hasVibrator()) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            vibrator.vibrate(android.os.VibrationEffect.createOneShot(dur,
+                                    android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+                        } else {
+                            vibrator.vibrate(dur);
+                        }
+                        addLog("Getar " + dur + "ms");
+                    } else {
+                        addLog("Tidak ada vibrator");
+                    }
+                    break;
+                }
+                case "_phone_toast": {
+                    String msg = resolveTemplate(node.getProperty("message"), text, chatId, userName);
+                    android.widget.Toast.makeText(this, msg != null ? msg : "", android.widget.Toast.LENGTH_SHORT).show();
+                    addLog("Toast: " + msg);
+                    break;
+                }
+                case "_phone_battery": {
+                    android.content.IntentFilter ifilter = new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED);
+                    android.content.Intent batteryStatus = registerReceiver(null, ifilter);
+                    if (batteryStatus != null) {
+                        int level = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+                        int scale = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
+                        int pct = (int) (level * 100.0 / scale);
+                        int status = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1);
+                        String statusStr = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ? "Mengisi" : "Tidak";
+                        String plugged = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) > 0 ? "Ya" : "Tidak";
+                        addLog("Baterai: " + pct + "% (" + statusStr + ", charger: " + plugged + ")");
+                    }
+                    break;
+                }
+                case "_phone_device_info": {
+                    String info = "Model: " + android.os.Build.MODEL
+                            + ", Android: " + android.os.Build.VERSION.RELEASE
+                            + ", API: " + android.os.Build.VERSION.SDK_INT
+                            + ", Brand: " + android.os.Build.BRAND
+                            + ", Device: " + android.os.Build.DEVICE;
+                    addLog(info);
+                    break;
+                }
+                case "_phone_open_url": {
+                    String url = resolveTemplate(node.getProperty("url"), text, chatId, userName);
+                    if (url != null && !url.isEmpty()) {
+                        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                            url = "https://" + url;
+                        }
+                        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url));
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                        addLog("Buka URL: " + url);
+                    }
+                    break;
+                }
+                case "_phone_clipboard_set": {
+                    String clipText = resolveTemplate(node.getProperty("text"), text, chatId, userName);
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    android.content.ClipData clip = android.content.ClipData.newPlainText("TgFlowBot", clipText != null ? clipText : "");
+                    clipboard.setPrimaryClip(clip);
+                    addLog("Clipboard: " + clipText);
+                    break;
+                }
+                case "_phone_volume": {
+                    String lvlStr = resolveTemplate(node.getProperty("level"), text, chatId, userName);
+                    int level = 50;
+                    try { level = Integer.parseInt(lvlStr); } catch (Exception ignored) {}
+                    android.media.AudioManager audio = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+                    int maxVol = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+                    int vol = level * maxVol / 100;
+                    audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, vol, 0);
+                    addLog("Volume: " + level + "%");
+                    break;
+                }
+                case "_phone_brightness": {
+                    String lvlStr = resolveTemplate(node.getProperty("level"), text, chatId, userName);
+                    int brightness = 128;
+                    try { brightness = Integer.parseInt(lvlStr); } catch (Exception ignored) {}
+                    if (brightness < 0) brightness = 0;
+                    if (brightness > 255) brightness = 255;
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        if (android.provider.Settings.System.canWrite(this)) {
+                            android.provider.Settings.System.putInt(getContentResolver(),
+                                    android.provider.Settings.System.SCREEN_BRIGHTNESS, brightness);
+                            addLog("Kecerahan: " + brightness);
+                        } else {
+                            Snackbar.make(canvas, "Izin tulis diperlukan untuk kecerahan", Snackbar.LENGTH_LONG)
+                                    .setAction("IZIN", v -> {
+                                        android.content.Intent intent = new android.content.Intent(
+                                                android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS);
+                                        intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                                        startActivity(intent);
+                                    })
+                                    .show();
+                        }
+                    }
+                    break;
+                }
+                case "_phone_tts": {
+                    String ttsText = resolveTemplate(node.getProperty("text"), text, chatId, userName);
+                    String langRaw = resolveTemplate(node.getProperty("language"), text, chatId, userName);
+                    if (langRaw == null || langRaw.isEmpty()) langRaw = "id-ID";
+                    if (ttsText == null || ttsText.isEmpty()) ttsText = text;
+                    final String ttsFinal = ttsText;
+                    final String lang = langRaw;
+                    final android.speech.tts.TextToSpeech[] ttsRef = new android.speech.tts.TextToSpeech[1];
+                    ttsRef[0] = new android.speech.tts.TextToSpeech(this, status -> {
+                        if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                            java.util.Locale locale = java.util.Locale.forLanguageTag(lang);
+                            ttsRef[0].setLanguage(locale);
+                            ttsRef[0].speak(ttsFinal, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "tts_" + node.getId());
+                            addLog("TTS: " + ttsFinal);
+                        } else {
+                            addLog("TTS gagal inisialisasi");
+                        }
+                    });
+                    break;
+                }
+                case "_phone_stt": {
+                    String sttPrompt = resolveTemplate(node.getProperty("prompt"), text, chatId, userName);
+                    String timeoutRaw = resolveTemplate(node.getProperty("timeout_sec"), text, chatId, userName);
+                    int timeoutSecTmp = 5;
+                    try { timeoutSecTmp = Integer.parseInt(timeoutRaw); } catch (Exception ignored) {}
+                    final int timeoutSec = timeoutSecTmp;
+                    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        Snackbar.make(canvas, "Izin mikrofon diperlukan untuk STT", Snackbar.LENGTH_LONG)
+                                .setAction("IZIN", v -> requestPermissions(
+                                        new String[]{android.Manifest.permission.RECORD_AUDIO}, 1002))
+                                .show();
+                        break;
+                    }
+                    addLog("STT: dengarkan...");
+                    final String sttText = text;
+                    final String sttChatId = chatId;
+                    final String sttUser = userName;
+                    final FlowNode sttNode = node;
+                    final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+                    final String[] sttResult = {""};
+                    final android.speech.SpeechRecognizer[] recognizerRef = new android.speech.SpeechRecognizer[1];
+                    final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+                    mainHandler.post(() -> {
+                        android.content.Intent sttIntent = new android.content.Intent(
+                                android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                        sttIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                        sttIntent.putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT,
+                                sttPrompt != null ? sttPrompt : "Silakan bicara");
+                        sttIntent.putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+                        android.speech.SpeechRecognizer recognizer =
+                                android.speech.SpeechRecognizer.createSpeechRecognizer(
+                                        com.tgflowbot.MainActivity.this);
+                        recognizerRef[0] = recognizer;
+                        recognizer.setRecognitionListener(new android.speech.RecognitionListener() {
+                            @Override public void onReadyForSpeech(android.os.Bundle params) {}
+                            @Override public void onBeginningOfSpeech() {}
+                            @Override public void onRmsChanged(float rmsDb) {}
+                            @Override public void onBufferReceived(byte[] buffer) {}
+                            @Override public void onEndOfSpeech() {}
+                            @Override public void onError(int err) {
+                                addLog("STT error: " + err);
+                                if (recognizerRef[0] != null) recognizerRef[0].destroy();
+                                latch.countDown();
+                            }
+                            @Override
+                            public void onResults(android.os.Bundle r) {
+                                java.util.ArrayList<String> m = r.getStringArrayList(
+                                        android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
+                                if (m != null && !m.isEmpty()) sttResult[0] = m.get(0);
+                                if (recognizerRef[0] != null) recognizerRef[0].destroy();
+                                latch.countDown();
+                            }
+                            @Override public void onPartialResults(android.os.Bundle p) {}
+                            @Override public void onEvent(int et, android.os.Bundle p) {}
+                        });
+                        recognizer.startListening(sttIntent);
+                    });
+                    new Thread(() -> {
+                        try { latch.await(timeoutSec, java.util.concurrent.TimeUnit.SECONDS); }
+                        catch (Exception ignored) {}
+                        final String recognized = sttResult[0].isEmpty() ? sttText : sttResult[0];
+                        if (!sttResult[0].isEmpty()) addLog("STT: " + sttResult[0]);
+                        runOnUiThread(() -> {
+                            canvas.triggerPulse();
+                            continueFlow(sttNode, sttChatId, sttUser, recognized);
+                        });
+                    }).start();
+                    return;
+                }
+            }
+            canvas.triggerPulse();
+            continueFlow(node, chatId, userName, text);
+        });
+    }
+    private TelegramMethod findMethodDef(String name) {
+        if (name == null) return null;
+        for (TelegramMethod m : MethodRegistry.getAllMethods()) {
+            if (m.apiName.equals(name)) return m;
+        }
+        return null;
+    }
+
+    private TelegramMethod findMethodByLabel(String label) {
+        if (label == null) return null;
+        for (TelegramMethod m : MethodRegistry.getAllMethods()) {
+            if (m.displayName.equals(label)) return m;
+        }
+        return null;
+    }
+
+    private static String timestamp() {
+        return new java.text.SimpleDateFormat(
+                "HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date());
+    }
+
+    private void addLog(String entry) {
+        String ts = timestamp();
+        synchronized (logLock) {
+            logEntries.add("[" + ts + "] " + entry);
+        }
+        runOnUiThread(() -> {
+            if (logAdapter != null) {
+                logAdapter.notifyDataSetChanged();
+            }
+        });
+    }
+
+    private void showLogViewer() {
+        BottomSheetDialog dialog = new BottomSheetDialog(this);
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(
+                (int) (16 * getResources().getDisplayMetrics().density),
+                (int) (16 * getResources().getDisplayMetrics().density),
+                (int) (16 * getResources().getDisplayMetrics().density),
+                (int) (16 * getResources().getDisplayMetrics().density)
+        );
+
+        TextView title = new TextView(this);
+        title.setText("Log Viewer");
+        title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium);
+        layout.addView(title);
+
+        RecyclerView rvLog = new RecyclerView(this);
+        rvLog.setLayoutManager(new LinearLayoutManager(this));
+        logAdapter = new LogAdapter(logEntries);
+        rvLog.setAdapter(logAdapter);
+        rvLog.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (int) (300 * getResources().getDisplayMetrics().density)
+        ));
+        layout.addView(rvLog);
+
+        if (!logEntries.isEmpty()) {
+            rvLog.post(() -> rvLog.scrollToPosition(0));
+        }
+
+        MaterialButton copyBtn = new MaterialButton(this);
+        copyBtn.setText("Salin Log");
+        copyBtn.setOnClickListener(v -> {
+            StringBuilder sb = new StringBuilder();
+            for (int i = logEntries.size() - 1; i >= 0; i--) {
+                sb.append(logEntries.get(i)).append('\n');
+            }
+            android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            cm.setText(sb.toString().trim());
+            Snackbar.make(canvas, "Log disalin ke clipboard", Snackbar.LENGTH_SHORT).show();
+        });
+        layout.addView(copyBtn);
+
+        MaterialButton clearBtn = new MaterialButton(this);
+        clearBtn.setText("Hapus Log");
+        clearBtn.setOnClickListener(v -> {
+            logEntries.clear();
+            if (logAdapter != null) logAdapter.notifyDataSetChanged();
+            Snackbar.make(canvas, "Log dihapus", Snackbar.LENGTH_SHORT).show();
+        });
+        layout.addView(clearBtn);
+
+        dialog.setOnDismissListener(d -> logAdapter = null);
+        dialog.setContentView(layout);
+        dialog.show();
+    }
+
+    private class LogAdapter extends RecyclerView.Adapter<LogAdapter.ViewHolder> {
+        private final ArrayList<String> entries;
+
+        LogAdapter(ArrayList<String> entries) {
+            this.entries = entries;
+        }
+
+        @Override
+        public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            TextView tv = new TextView(parent.getContext());
+            tv.setPadding(0, (int) (4 * getResources().getDisplayMetrics().density), 0, 0);
+            tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+            tv.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall);
+            tv.setLayoutParams(new RecyclerView.LayoutParams(
+                    RecyclerView.LayoutParams.MATCH_PARENT,
+                    RecyclerView.LayoutParams.WRAP_CONTENT));
+            return new ViewHolder(tv);
+        }
+
+        @Override
+        public void onBindViewHolder(ViewHolder holder, int position) {
+            holder.textView.setText(entries.get(entries.size() - 1 - position));
+        }
+
+        @Override
+        public int getItemCount() {
+            return entries.size();
+        }
+
+        class ViewHolder extends RecyclerView.ViewHolder {
+            final TextView textView;
+            ViewHolder(TextView tv) {
+                super(tv);
+                textView = tv;
+            }
+        }
+    }
+
+    private void showSettingsDialog() {
+        View view = getLayoutInflater().inflate(R.layout.dialog_settings, null);
+        com.google.android.material.textfield.TextInputEditText etToken =
+                view.findViewById(R.id.et_token);
+        com.google.android.material.textfield.TextInputEditText etChatId =
+                view.findViewById(R.id.et_chat_id);
+
+        String savedToken = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString("bot_token", "");
+        String savedChatId = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString("chat_id", "");
+        etToken.setText(savedToken);
+        etChatId.setText(savedChatId);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Telegram Settings")
+                .setView(view)
+                .setPositiveButton("Simpan", (d, w) -> {
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                            .edit()
+                            .putString("bot_token", etToken.getText().toString())
+                            .putString("chat_id", etChatId.getText().toString())
+                            .apply();
+                    Snackbar.make(canvas, "Settings disimpan", Snackbar.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
+    private void showChatIdInput() {
+        View view = getLayoutInflater().inflate(R.layout.dialog_chat_id, null);
+        com.google.android.material.textfield.TextInputEditText et =
+                view.findViewById(R.id.et_chat_id);
+        et.setText(lastChatId);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Set Last Chat ID")
+                .setMessage("Chat ID untuk mode publik (kosongkan jika ingin diisi otomatis dari polling)")
+                .setView(view)
+                .setPositiveButton("Simpan", (d, w) -> {
+                    lastChatId = et.getText().toString().trim();
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                            .edit().putString("last_chat_id", lastChatId).apply();
+                    Snackbar.make(canvas, "Chat ID disimpan", Snackbar.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
+    private void showAiSettings() {
+        AiProvider[] providers = AiProvider.getBuiltInProviders();
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(48, 24, 48, 24);
+
+        for (AiProvider p : providers) {
+            if (!p.needsApiKey) continue;
+            com.google.android.material.textfield.TextInputLayout til =
+                    new com.google.android.material.textfield.TextInputLayout(this);
+            til.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+            til.setHint(p.name + " API Key");
+            til.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            int m = (int) (12 * getResources().getDisplayMetrics().density);
+            ((LinearLayout.LayoutParams) til.getLayoutParams()).setMargins(0, m, 0, 0);
+
+            com.google.android.material.textfield.TextInputEditText et =
+                    new com.google.android.material.textfield.TextInputEditText(this);
+            String saved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString("ai_key_" + p.id, "");
+            et.setText(saved);
+            et.setTag("key_" + p.id);
+            til.addView(et);
+            layout.addView(til);
+        }
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("AI API Keys")
+                .setView(layout)
+                .setPositiveButton("Simpan", (d, w) -> {
+                    for (int i = 0; i < layout.getChildCount(); i++) {
+                        android.view.View child = layout.getChildAt(i);
+                        if (child instanceof com.google.android.material.textfield.TextInputLayout) {
+                            com.google.android.material.textfield.TextInputLayout til =
+                                    (com.google.android.material.textfield.TextInputLayout) child;
+                            com.google.android.material.textfield.TextInputEditText et =
+                                    (com.google.android.material.textfield.TextInputEditText) til.getEditText();
+                            if (et != null && et.getTag() instanceof String) {
+                                String tag = (String) et.getTag();
+                                if (tag.startsWith("key_")) {
+                                    String providerId = tag.substring(4);
+                                    String key = et.getText() != null ? et.getText().toString() : "";
+                                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                                            .edit()
+                                            .putString("ai_key_" + providerId, key)
+                                            .apply();
+                                }
+                            }
+                        }
+                    }
+                    Snackbar.make(canvas, "API Keys disimpan", Snackbar.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
+    private void showNodeActions(FlowNode node) {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(node.getLabel())
+                .setItems(new CharSequence[]{"Edit Node", "Hapus Node"}, (d, w) -> {
+                    if (w == 0) {
+                        openNodeEditor(node);
+                    } else {
+                        selectedNode = node;
+                        canvas.removeSelectedNode();
+                        selectedNode = null;
+                        setDirty();
+                        Snackbar.make(canvas, "Node dihapus", Snackbar.LENGTH_SHORT).show();
+                    }
+                })
+                .show();
+    }
+
+    private void confirmDeleteAll() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Hapus Semua")
+                .setMessage("Hapus semua node dan koneksi?")
+                .setPositiveButton("Hapus", (d, w) -> {
+                    canvas.clearAll();
+                    setDirty();
+                    Snackbar.make(canvas, "Semua dihapus", Snackbar.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 1001 && grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Snackbar.make(canvas, "Izin kamera diberikan, jalankan ulang node", Snackbar.LENGTH_SHORT).show();
+        }
+        if (requestCode == 1002 && grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Snackbar.make(canvas, "Izin mikrofon diberikan, jalankan ulang workflow", Snackbar.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        saveWorkflow();
+        super.onBackPressed();
+    }
+}

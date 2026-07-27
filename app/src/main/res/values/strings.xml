@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">TgFlowBot</string>
+  <string name="add_node">Tambah Node</string>
+  <string name="delete_node">Hapus Node</string>
+  <string name="save_workflow">Simpan Workflow</string>
+  <string name="load_workflow">Muat Workflow</string>
+  <string name="run_workflow">Jalankan</string>
+  <string name="node_trigger">Trigger</string>
+  <string name="node_action">Action</string>
+  <string name="node_condition">Condition</string>
+  <string name="node_output">Output</string>
+  <string name="on_message">On Message</string>
+  <string name="on_command">On Command</string>
+  <string name="send_message">Send Message</string>
+  <string name="forward_message">Forward Message</string>
+  <string name="reply_message">Reply</string>
+  <string name="contains">Contains</string>
+  <string name="equals">Equals</string>
+  <string name="log_message">Log</string>
+  <string name="edit_node">Edit Node</string>
+  <string name="node_label">Label</string>
+  <string name="node_config">Konfigurasi</string>
+  <string name="delete">Hapus</string>
+  <string name="cancel">Batal</string>
+  <string name="save">Simpan</string>
+  <string name="flow_canvas">Flow Canvas</string>
+  <string name="node_palette">Palet Node</string>
+  <string name="drag_hint">Seret node ke canvas</string>
+  <string name="open_drawer">Buka panel</string>
+  <string name="close_drawer">Tutup panel</string>
+  <string name="search_node">Cari node</string>
+  <string name="install">Install</string>
+  <string name="remove">Remove</string>
+  <string name="ext_marketplace">Extension Marketplace</string>
+  <string name="installed">Terinstall</string>
+  <string name="ext_description_format">%1$s · %2$d method(s)</string>
+</resources>

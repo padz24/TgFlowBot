@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto">
+  <item
+    android:id="@+id/action_run"
+    android:icon="@drawable/ic_play"
+    android:title="Start"
+    app:showAsAction="ifRoom" />
+  <item
+    android:id="@+id/action_save"
+    android:icon="@drawable/ic_save"
+    android:title="@string/save_workflow"
+    app:showAsAction="ifRoom" />
+  <item
+    android:id="@+id/action_poll"
+    android:icon="@drawable/ic_add"
+    android:title="Poll Pesan"
+    app:showAsAction="never" />
+  <item
+    android:id="@+id/action_set_chat_id"
+    android:icon="@drawable/ic_add"
+    android:title="Set Chat ID"
+    app:showAsAction="never" />
+  <item
+    android:id="@+id/action_view_log"
+    android:icon="@drawable/ic_add"
+    android:title="View Log"
+    app:showAsAction="never" />
+  <item
+    android:id="@+id/action_settings"
+    android:icon="@drawable/ic_add"
+    android:title="Settings"
+    app:showAsAction="never" />
+  <item
+    android:id="@+id/action_delete_all"
+    android:icon="@drawable/ic_delete"
+    android:title="@string/delete_node"
+    app:showAsAction="never" />
+</menu>

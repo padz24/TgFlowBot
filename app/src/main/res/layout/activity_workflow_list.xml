@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:orientation="vertical"
+  android:theme="@style/AppTheme">
+
+  <com.google.android.material.appbar.MaterialToolbar
+    android:id="@+id/toolbar"
+    android:layout_width="match_parent"
+    android:layout_height="?attr/actionBarSize"
+    android:background="?attr/colorSurface"
+    app:title="@string/app_name"
+    app:navigationIcon="?attr/homeAsUpIndicator" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:gravity="center">
+
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/btn_new_workflow"
+      style="@style/Widget.Material3.Button"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginEnd="4dp"
+      android:text="New Workflow" />
+
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/btn_extensions"
+      style="@style/Widget.Material3.Button.TonalButton"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="4dp"
+      android:text="Extensions" />
+
+  </LinearLayout>
+
+  <androidx.recyclerview.widget.RecyclerView
+    android:id="@+id/rv_workflows"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:clipToPadding="false"
+    android:padding="12dp" />
+
+  <TextView
+    android:id="@+id/tv_empty"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:gravity="center"
+    android:text="Belum ada workflow\nTap 'New Workflow' untuk mulai"
+    android:textAppearance="?attr/textAppearanceBodyLarge"
+    android:textColor="?attr/colorOnSurfaceVariant"
+    android:visibility="gone" />
+
+</LinearLayout>

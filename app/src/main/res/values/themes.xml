@@ -1,0 +1,18 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+  <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+    <item name="dynamicColorThemeOverlay">@style/ThemeOverlay.Material3.DynamicColors.DayNight</item>
+  </style>
+
+  <style name="Widget.NodeCard" parent="Widget.Material3.CardView.Filled">
+    <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Medium</item>
+    <item name="cardElevation">4dp</item>
+  </style>
+
+  <style name="Widget.PortCircle" parent="">
+    <item name="android:layout_width">16dp</item>
+    <item name="android:layout_height">16dp</item>
+    <item name="android:background">@drawable/circle_port</item>
+  </style>
+
+</resources>

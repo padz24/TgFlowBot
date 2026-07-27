@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:fillViewport="true">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="?attr/colorSurface">
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:id="@+id/search_layout"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_margin="12dp"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+      app:endIconMode="clear_text"
+      app:endIconDrawable="@drawable/ic_delete"
+      app:hintEnabled="false">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/search_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Cari node..."
+        android:inputType="text"
+        android:fontFamily="sans-serif"
+        android:paddingVertical="8dp" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+      android:id="@+id/section_trigger"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="TRIGGER"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_triggers"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_tg"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="TELEGRAM"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_tg"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_ai"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="AI"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_ai"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_math"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="MATH"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_math"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_text"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="TEXT"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_text"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_vars"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="VARIABLES"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_vars"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_flow"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="FLOW"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_flow"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_phone"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="PHONE"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_phone"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_list"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="LIST"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_list"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_op"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="OPERATOR"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_op"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_file"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="FILE"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_file"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/sub_http"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="HTTP"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1"
+      android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_actions_http"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/section_condition"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="CONDITION"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_conditions"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+      android:id="@+id/section_output"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingHorizontal="16dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="OUTPUT"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:letterSpacing="0.1" />
+
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/rv_outputs"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:nestedScrollingEnabled="false"
+      app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+  </LinearLayout>
+
+</ScrollView>

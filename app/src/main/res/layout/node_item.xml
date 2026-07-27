@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  android:id="@+id/card_root"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginHorizontal="8dp"
+  android:layout_marginVertical="3dp"
+  app:cardCornerRadius="8dp"
+  app:cardElevation="1dp"
+  app:strokeWidth="0dp"
+  android:clickable="true"
+  android:focusable="true"
+  android:longClickable="true"
+  android:foreground="?attr/selectableItemBackground"
+  android:animateLayoutChanges="true">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:minHeight="48dp">
+
+    <View
+      android:id="@+id/accent_bar"
+      android:layout_width="4dp"
+      android:layout_height="match_parent"
+      android:background="#FF1976D2" />
+
+    <ImageView
+      android:id="@+id/iv_icon"
+      android:layout_width="32dp"
+      android:layout_height="32dp"
+      android:layout_marginStart="12dp"
+      android:padding="6dp"
+      android:background="@drawable/circle_port"
+      android:backgroundTint="#15FFFFFF" />
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="10dp"
+      android:orientation="vertical"
+      android:gravity="center_vertical">
+
+      <TextView
+        android:id="@+id/tv_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/tv_description"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    </LinearLayout>
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
