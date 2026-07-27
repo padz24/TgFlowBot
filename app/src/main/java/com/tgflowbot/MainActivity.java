@@ -474,6 +474,12 @@ public class MainActivity extends AppCompatActivity {
         } else if (id == R.id.action_delete_all) {
             confirmDeleteAll();
             return true;
+        } else if (id == R.id.action_about) {
+            showAboutDialog();
+            return true;
+        } else if (id == R.id.action_report_bug) {
+            showReportBugDialog();
+            return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -1871,6 +1877,66 @@ public class MainActivity extends AppCompatActivity {
                     default:   return a == b;
                 }
             }
+            case "endsWith": {
+                if (value == null || value.isEmpty()) return true;
+                return caseSensitive ? text.endsWith(value) :
+                        text.toLowerCase().endsWith(value.toLowerCase());
+            }
+            case "isEmpty": {
+                return text == null || text.trim().isEmpty();
+            }
+            case "isNumeric": {
+                if (text == null || text.isEmpty()) return false;
+                try { Double.parseDouble(text.trim()); return true; }
+                catch (NumberFormatException e) { return false; }
+            }
+            case "length": {
+                String op = node.getProperty("operator");
+                if (op == null) op = "==";
+                String lenStr = node.getProperty("value");
+                int targetLen = 0;
+                try { targetLen = Integer.parseInt(lenStr); } catch (Exception ignored) {}
+                int actualLen = text != null ? text.length() : 0;
+                switch (op) {
+                    case "!=": return actualLen != targetLen;
+                    case ">":  return actualLen > targetLen;
+                    case "<":  return actualLen < targetLen;
+                    case ">=": return actualLen >= targetLen;
+                    case "<=": return actualLen <= targetLen;
+                    default:   return actualLen == targetLen;
+                }
+            }
+            case "isBetween": {
+                String valRaw = resolveTemplate(node.getProperty("value"), text, null, null);
+                String minRaw = resolveTemplate(node.getProperty("min"), text, null, null);
+                String maxRaw = resolveTemplate(node.getProperty("max"), text, null, null);
+                double val = 0, min = 0, max = 0;
+                try { val = Double.parseDouble(valRaw != null ? valRaw : "0"); } catch (Exception ignored) {}
+                try { min = Double.parseDouble(minRaw != null ? minRaw : "0"); } catch (Exception ignored) {}
+                try { max = Double.parseDouble(maxRaw != null ? maxRaw : "0"); } catch (Exception ignored) {}
+                return val >= min && val <= max;
+            }
+            case "_in": {
+                String listStr = node.getProperty("list");
+                if (listStr == null || listStr.isEmpty()) return false;
+                String[] items = listStr.split(",");
+                for (String item : items) {
+                    String trimmed = item.trim();
+                    if (caseSensitive ? value != null && value.equals(trimmed) :
+                            value != null && value.equalsIgnoreCase(trimmed)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            case "notEmpty": {
+                String prop = resolveTemplate(node.getProperty("value"), text, null, null);
+                return prop != null && !prop.trim().isEmpty();
+            }
+            case "hasKey": {
+                String key = node.getProperty("key");
+                return key != null && currentMsgData.containsKey(key);
+            }
             case "alwaysFalse": {
                 return false;
             }
@@ -3176,6 +3242,106 @@ public class MainActivity extends AppCompatActivity {
                     canvas.clearAll();
                     setDirty();
                     Snackbar.make(canvas, "Semua dihapus", Snackbar.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Batal", null)
+                .show();
+    }
+
+    private void showAboutDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(48, 24, 48, 24);
+
+        TextView tvIcon = new TextView(this);
+        tvIcon.setText("\uD83E\uDD16");
+        tvIcon.setTextSize(48);
+        tvIcon.setGravity(android.view.Gravity.CENTER);
+        layout.addView(tvIcon);
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("TgFlowBot");
+        tvTitle.setTextSize(22);
+        tvTitle.setGravity(android.view.Gravity.CENTER);
+        tvTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        layout.addView(tvTitle);
+
+        String[] lines = {
+                "Versi: 1.0.0",
+                "",
+                "Visual Telegram Bot Builder",
+                "untuk Android",
+                "",
+                "Bangun bot Telegram secara visual",
+                "dengan drag-and-drop node editor.",
+                "Seperti n8n, tapi untuk Telegram bot,",
+                "berjalan native di Android.",
+                "",
+                "122+ metode Telegram API built-in",
+                "29 trigger, 150+ action, 25+ kondisi",
+                "Dukungan AI: OpenAI, Claude, Gemini,",
+                "Groq, dan llama.cpp",
+                "",
+                "Dibangun dengan Java & Material Design 3",
+                "Target: Android 7.0+ (API 24)",
+        };
+        for (String line : lines) {
+            TextView tv = new TextView(this);
+            tv.setText(line);
+            tv.setGravity(android.view.Gravity.CENTER);
+            tv.setTextSize(14);
+            layout.addView(tv);
+        }
+
+        new MaterialAlertDialogBuilder(this)
+                .setView(layout)
+                .setPositiveButton("Tutup", null)
+                .show();
+    }
+
+    private void showReportBugDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(48, 24, 48, 24);
+
+        TextView tvDesc = new TextView(this);
+        tvDesc.setText("Laporkan bug atau minta fitur baru");
+        tvDesc.setTextSize(16);
+        tvDesc.setGravity(android.view.Gravity.CENTER);
+        layout.addView(tvDesc);
+
+        com.google.android.material.textfield.TextInputLayout tilTitle =
+                new com.google.android.material.textfield.TextInputLayout(this);
+        tilTitle.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+        tilTitle.setHint("Judul");
+        com.google.android.material.textfield.TextInputEditText etTitle =
+                new com.google.android.material.textfield.TextInputEditText(this);
+        tilTitle.addView(etTitle);
+        layout.addView(tilTitle);
+
+        com.google.android.material.textfield.TextInputLayout tilDesc =
+                new com.google.android.material.textfield.TextInputLayout(this);
+        tilDesc.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+        tilDesc.setHint("Deskripsi detail");
+        com.google.android.material.textfield.TextInputEditText etDesc =
+                new com.google.android.material.textfield.TextInputEditText(this);
+        etDesc.setMinLines(4);
+        etDesc.setGravity(android.view.Gravity.TOP);
+        tilDesc.addView(etDesc);
+        layout.addView(tilDesc);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Report Bug")
+                .setView(layout)
+                .setPositiveButton("Buka GitHub", (d, w) -> {
+                    String title = etTitle.getText() != null ? etTitle.getText().toString().trim() : "";
+                    String body = etDesc.getText() != null ? etDesc.getText().toString().trim() : "";
+                    String url = "https://github.com/padz24/TgFlowBot/issues/new?title="
+                            + android.net.Uri.encode(title)
+                            + "&body=" + android.net.Uri.encode(body);
+                    android.content.Intent intent = new android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(url));
+                    startActivity(intent);
                 })
                 .setNegativeButton("Batal", null)
                 .show();

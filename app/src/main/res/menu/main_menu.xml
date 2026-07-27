@@ -36,4 +36,14 @@
     android:icon="@drawable/ic_delete"
     android:title="@string/delete_node"
     app:showAsAction="never" />
+  <item
+    android:id="@+id/action_about"
+    android:icon="@drawable/ic_add"
+    android:title="About"
+    app:showAsAction="never" />
+  <item
+    android:id="@+id/action_report_bug"
+    android:icon="@drawable/ic_add"
+    android:title="Report Bug"
+    app:showAsAction="never" />
 </menu>

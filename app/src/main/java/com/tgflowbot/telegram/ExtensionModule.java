@@ -1157,6 +1157,32 @@ public class ExtensionModule {
                         p("b", ParamDef.ParamType.STRING, true, "Nilai B"),
                         p("operator", ParamDef.ParamType.STRING, false, "==, !=, >, <, >=, <=", "=="),
                     }},
+                    {"endsWith", "Ends With", "Cek apakah teks diakhiri kata tertentu", NodeType.CONDITION, new ParamDef[]{
+                        p("value", ParamDef.ParamType.STRING, true, "Akhiran yang dicek"),
+                        p("case_sensitive", ParamDef.ParamType.BOOLEAN, false, "Peka huruf besar/kecil", "false"),
+                    }},
+                    {"isEmpty", "Is Empty", "Cek apakah teks kosong/null", NodeType.CONDITION, null},
+                    {"isNumeric", "Is Numeric", "Cek apakah teks berupa angka", NodeType.CONDITION, null},
+                    {"length", "Length", "Bandingkan panjang teks", NodeType.CONDITION, new ParamDef[]{
+                        p("operator", ParamDef.ParamType.STRING, false, "==, !=, >, <, >=, <=", "=="),
+                        p("value", ParamDef.ParamType.INTEGER, true, "Panjang yang dibandingkan"),
+                    }},
+                    {"isBetween", "Is Between", "Cek apakah nilai di antara dua angka", NodeType.CONDITION, new ParamDef[]{
+                        p("value", ParamDef.ParamType.STRING, true, "Nilai yang dicek (bisa pakai {{placeholder}})"),
+                        p("min", ParamDef.ParamType.STRING, true, "Nilai minimum"),
+                        p("max", ParamDef.ParamType.STRING, true, "Nilai maksimum"),
+                    }},
+                    {"_in", "In List", "Cek apakah nilai ada dalam daftar", NodeType.CONDITION, new ParamDef[]{
+                        p("value", ParamDef.ParamType.STRING, true, "Nilai yang dicek"),
+                        p("list", ParamDef.ParamType.STRING, true, "Daftar pisah koma (mis: a,b,c)"),
+                        p("case_sensitive", ParamDef.ParamType.BOOLEAN, false, "Peka huruf besar/kecil", "false"),
+                    }},
+                    {"notEmpty", "Not Empty", "Cek apakah nilai tidak kosong", NodeType.CONDITION, new ParamDef[]{
+                        p("value", ParamDef.ParamType.STRING, true, "Nilai yang dicek (bisa pakai {{placeholder}})"),
+                    }},
+                    {"hasKey", "Has Key", "Cek apakah key tertentu ada di data pesan", NodeType.CONDITION, new ParamDef[]{
+                        p("key", ParamDef.ParamType.STRING, true, "Nama key (mis: photo, from.id)"),
+                    }},
                     {"reply", "Reply", "Balas pesan", NodeType.OUTPUT, new ParamDef[]{
                         p("text", ParamDef.ParamType.STRING, true, "Isi balasan"),
                         p("parse_mode", ParamDef.ParamType.STRING, false, "Format teks"),
