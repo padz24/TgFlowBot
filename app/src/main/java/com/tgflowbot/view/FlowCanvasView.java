@@ -340,19 +340,23 @@ public class FlowCanvasView extends View {
 
     private void drawGrid(Canvas canvas) {
         float gridSize = GRID_SIZE;
-        float startX = 0;
-        float startY = 0;
+        float viewLeft = -offsetX / scaleFactor;
+        float viewTop = -offsetY / scaleFactor;
 
-        int colCount = (int) (getWidth() / scaleFactor / gridSize) + 4;
-        int rowCount = (int) (getHeight() / scaleFactor / gridSize) + 4;
+        float startX = (float) (Math.floor(viewLeft / gridSize) * gridSize);
+        float startY = (float) (Math.floor(viewTop / gridSize) * gridSize);
 
-        for (int i = 0; i < colCount; i++) {
+        int extra = 60;
+        int cols = (int) (getWidth() / scaleFactor / gridSize) + extra;
+        int rows = (int) (getHeight() / scaleFactor / gridSize) + extra;
+
+        for (int i = 0; i < cols; i++) {
             float x = startX + i * gridSize;
-            canvas.drawLine(x, startY, x, startY + rowCount * gridSize, gridPaint);
+            canvas.drawLine(x, startY, x, startY + rows * gridSize, gridPaint);
         }
-        for (int i = 0; i < rowCount; i++) {
+        for (int i = 0; i < rows; i++) {
             float y = startY + i * gridSize;
-            canvas.drawLine(startX, y, startX + colCount * gridSize, y, gridPaint);
+            canvas.drawLine(startX, y, startX + cols * gridSize, y, gridPaint);
         }
     }
 
@@ -618,17 +622,16 @@ public class FlowCanvasView extends View {
     }
 
     private class ScaleListener extends ScaleGestureDetector.SimpleOnScaleGestureListener {
-        private float focusX, focusY;
-
         @Override
         public boolean onScaleBegin(ScaleGestureDetector detector) {
-            focusX = detector.getFocusX();
-            focusY = detector.getFocusY();
             return true;
         }
 
         @Override
         public boolean onScale(ScaleGestureDetector detector) {
+            float focusX = detector.getFocusX();
+            float focusY = detector.getFocusY();
+
             float newScale = scaleFactor * detector.getScaleFactor();
             newScale = Math.max(MIN_ZOOM, Math.min(newScale, MAX_ZOOM));
 
