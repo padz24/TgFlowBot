@@ -2858,12 +2858,6 @@ public class MainActivity extends AppCompatActivity {
                     addLog("Switch: " + result);
                     break;
                 }
-                case "_switch": {
-                    String switchValue = resolveTemplate(node.getProperty("value"), text, chatId, userName);
-                    result = switchValue != null ? switchValue : "";
-                    addLog("Switch: " + result);
-                    break;
-                }
                 case "_loop_items": {
                     String srcRaw = resolveTemplate(node.getProperty("source"), text, chatId, userName);
                     if (srcRaw == null) srcRaw = result;
