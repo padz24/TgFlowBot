@@ -10,6 +10,7 @@ import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.TypedValue;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -63,8 +64,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -276,97 +277,75 @@ public class MainActivity extends AppCompatActivity {
             view.startDragAndDrop(clipData, shadow, null, 0);
         };
 
+        setupDropdown(findViewById(R.id.section_trigger), (RecyclerView) findViewById(R.id.rv_triggers), triggers.isEmpty());
         triggerAdapter = new NodeAdapter(triggers, clickListener);
         triggerAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_triggers)).setAdapter(triggerAdapter);
-        findViewById(R.id.section_trigger).setVisibility(triggers.isEmpty() ? View.GONE : View.VISIBLE);
 
+        setupDropdown(findViewById(R.id.sub_tg), (RecyclerView) findViewById(R.id.rv_actions_tg), actionsTg.isEmpty());
         actionTgAdapter = new NodeAdapter(actionsTg, clickListener);
         actionTgAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_tg)).setAdapter(actionTgAdapter);
-        boolean tgHas = !actionsTg.isEmpty();
-        findViewById(R.id.sub_tg).setVisibility(tgHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_tg).setVisibility(tgHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_ai), (RecyclerView) findViewById(R.id.rv_actions_ai), actionsAi.isEmpty());
         actionAiAdapter = new NodeAdapter(actionsAi, clickListener);
         actionAiAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_ai)).setAdapter(actionAiAdapter);
-        boolean aiHas = !actionsAi.isEmpty();
-        findViewById(R.id.sub_ai).setVisibility(aiHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_ai).setVisibility(aiHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_math), (RecyclerView) findViewById(R.id.rv_actions_math), actionsMath.isEmpty());
         actionMathAdapter = new NodeAdapter(actionsMath, clickListener);
         actionMathAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_math)).setAdapter(actionMathAdapter);
-        boolean mathHas = !actionsMath.isEmpty();
-        findViewById(R.id.sub_math).setVisibility(mathHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_math).setVisibility(mathHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_text), (RecyclerView) findViewById(R.id.rv_actions_text), actionsText.isEmpty());
         actionTextAdapter = new NodeAdapter(actionsText, clickListener);
         actionTextAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_text)).setAdapter(actionTextAdapter);
-        boolean textHas = !actionsText.isEmpty();
-        findViewById(R.id.sub_text).setVisibility(textHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_text).setVisibility(textHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_vars), (RecyclerView) findViewById(R.id.rv_actions_vars), actionsVars.isEmpty());
         actionVarsAdapter = new NodeAdapter(actionsVars, clickListener);
         actionVarsAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_vars)).setAdapter(actionVarsAdapter);
-        boolean varsHas = !actionsVars.isEmpty();
-        findViewById(R.id.sub_vars).setVisibility(varsHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_vars).setVisibility(varsHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_flow), (RecyclerView) findViewById(R.id.rv_actions_flow), actionsFlow.isEmpty());
         actionFlowAdapter = new NodeAdapter(actionsFlow, clickListener);
         actionFlowAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_flow)).setAdapter(actionFlowAdapter);
-        boolean flowHas = !actionsFlow.isEmpty();
-        findViewById(R.id.sub_flow).setVisibility(flowHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_flow).setVisibility(flowHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_phone), (RecyclerView) findViewById(R.id.rv_actions_phone), actionsPhone.isEmpty());
         actionPhoneAdapter = new NodeAdapter(actionsPhone, clickListener);
         actionPhoneAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_phone)).setAdapter(actionPhoneAdapter);
-        boolean phoneHas = !actionsPhone.isEmpty();
-        findViewById(R.id.sub_phone).setVisibility(phoneHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_phone).setVisibility(phoneHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_list), (RecyclerView) findViewById(R.id.rv_actions_list), actionsList.isEmpty());
         actionListAdapter = new NodeAdapter(actionsList, clickListener);
         actionListAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_list)).setAdapter(actionListAdapter);
-        boolean listHas = !actionsList.isEmpty();
-        findViewById(R.id.sub_list).setVisibility(listHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_list).setVisibility(listHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_op), (RecyclerView) findViewById(R.id.rv_actions_op), actionsOp.isEmpty());
         actionOpAdapter = new NodeAdapter(actionsOp, clickListener);
         actionOpAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_op)).setAdapter(actionOpAdapter);
-        boolean opHas = !actionsOp.isEmpty();
-        findViewById(R.id.sub_op).setVisibility(opHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_op).setVisibility(opHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_file), (RecyclerView) findViewById(R.id.rv_actions_file), actionsFile.isEmpty());
         actionFileAdapter = new NodeAdapter(actionsFile, clickListener);
         actionFileAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_file)).setAdapter(actionFileAdapter);
-        boolean fileHas = !actionsFile.isEmpty();
-        findViewById(R.id.sub_file).setVisibility(fileHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_file).setVisibility(fileHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.sub_http), (RecyclerView) findViewById(R.id.rv_actions_http), actionsHttp.isEmpty());
         actionHttpAdapter = new NodeAdapter(actionsHttp, clickListener);
         actionHttpAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_actions_http)).setAdapter(actionHttpAdapter);
-        boolean httpHas = !actionsHttp.isEmpty();
-        findViewById(R.id.sub_http).setVisibility(httpHas ? View.VISIBLE : View.GONE);
-        findViewById(R.id.rv_actions_http).setVisibility(httpHas ? View.VISIBLE : View.GONE);
 
+        setupDropdown(findViewById(R.id.section_condition), (RecyclerView) findViewById(R.id.rv_conditions), conditions.isEmpty());
         conditionAdapter = new NodeAdapter(conditions, clickListener);
         conditionAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_conditions)).setAdapter(conditionAdapter);
-        findViewById(R.id.section_condition).setVisibility(conditions.isEmpty() ? View.GONE : View.VISIBLE);
 
+        setupDropdown(findViewById(R.id.section_output), (RecyclerView) findViewById(R.id.rv_outputs), outputs.isEmpty());
         outputAdapter = new NodeAdapter(outputs, clickListener);
         outputAdapter.setOnNodeDragListener(dragListener);
         ((RecyclerView) findViewById(R.id.rv_outputs)).setAdapter(outputAdapter);
-        findViewById(R.id.section_output).setVisibility(outputs.isEmpty() ? View.GONE : View.VISIBLE);
 
         TextInputEditText searchInput = findViewById(R.id.search_input);
         searchInput.addTextChangedListener(new TextWatcher() {
@@ -413,6 +392,38 @@ public class MainActivity extends AppCompatActivity {
         if (apiName.startsWith("_phone_"))
             return "phone";
         return "tg";
+    }
+
+    private final Set<Integer> expandedSections = new HashSet<>();
+
+    private void setupDropdown(View header, RecyclerView rv, boolean empty) {
+        if (empty) {
+            header.setVisibility(View.GONE);
+            rv.setVisibility(View.GONE);
+            return;
+        }
+        header.setVisibility(View.VISIBLE);
+        rv.setVisibility(View.VISIBLE);
+        expandedSections.add(header.getId());
+        if (header instanceof TextView) {
+            ((TextView) header).setText(((TextView) header).getText() + "  ▾");
+        }
+        header.setClickable(true);
+        TypedValue tv = new TypedValue();
+        header.getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true);
+        header.setBackgroundResource(tv.resourceId);
+        header.setOnClickListener(v -> {
+            int id = v.getId();
+            boolean expanded = expandedSections.contains(id);
+            rv.setVisibility(expanded ? View.GONE : View.VISIBLE);
+            if (v instanceof TextView) {
+                TextView tv = (TextView) v;
+                String t = tv.getText().toString();
+                tv.setText(expanded ? t.replace(" ▾", " ▸") : t.replace(" ▸", " ▾"));
+            }
+            if (expanded) expandedSections.remove(id);
+            else expandedSections.add(id);
+        });
     }
 
     private void filterPalette(String query) {
