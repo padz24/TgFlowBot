@@ -1648,98 +1648,18 @@ public class MainActivity extends AppCompatActivity {
         final String cId = chatId;
         final String uName = userName;
 
-        Set<String> connectedPhoneMethods = new HashSet<>();
-        for (Connection conn : workflow.getConnections()) {
-            if (conn.getSourceNodeId().equals(node.getId())) {
-                FlowNode target = workflow.findNodeById(conn.getTargetNodeId());
-                if (target != null) {
-                    String m = target.getProperty("_method");
-                    if (m != null && m.startsWith("_phone_")) {
-                        connectedPhoneMethods.add(m);
-                    }
-                }
-            }
-        }
-        boolean useTools = !connectedPhoneMethods.isEmpty();
-
-        if (!useTools) {
-            AiChatHelper.chat(provider, apiKey, prompt, model, systemPrompt,
-                    temperature, maxTokens, customEndpoint,
-                    new AiChatHelper.AiCallback() {
-                @Override
-                public void onSuccess(String responseText) {
-                    addLog("AI: " + responseText);
-                    currentMsgData.put("result", responseText);
-                    runOnUiThread(() -> {
-                        Snackbar.make(canvas, "AI: " + responseText,
-                                Snackbar.LENGTH_LONG).show();
-                        continueFlowSkipPhone(node, cId, uName, responseText, connectedPhoneMethods);
-                    });
-                }
-
-                @Override
-                public void onError(String error) {
-                    addLog("AI Error: " + error);
-                    currentMsgData.put("error", error);
-                    runOnUiThread(() -> {
-                        Snackbar.make(canvas,
-                                "AI Error: " + error, Snackbar.LENGTH_LONG).show();
-                        continueFlowSkipPhone(node, cId, uName, "", connectedPhoneMethods);
-                    });
-                }
-            });
-            return;
-        }
-
-        List<AiChatHelper.ToolDefinition> toolDefs = buildAiToolDefs(connectedPhoneMethods);
-        List<String> history = new ArrayList<>();
-
-        AiChatHelper.chatWithTools(provider, apiKey, prompt, model, systemPrompt,
-                temperature, maxTokens, customEndpoint, toolDefs, history,
-                new AiChatHelper.AiToolCallback() {
-            @Override
-            public void onToolCalls(List<AiChatHelper.ToolCall> calls, Runnable retry) {
-                for (AiChatHelper.ToolCall call : calls) {
-                    JsonObject asstMsg = new JsonObject();
-                    asstMsg.addProperty("role", "assistant");
-                    asstMsg.addProperty("content", (String) null);
-                    JsonArray tcs = new JsonArray();
-                    JsonObject tc = new JsonObject();
-                    tc.addProperty("id", call.id);
-                    tc.addProperty("type", "function");
-                    JsonObject func = new JsonObject();
-                    func.addProperty("name", call.name);
-                    func.addProperty("arguments", call.arguments);
-                    tc.add("function", func);
-                    tcs.add(tc);
-                    asstMsg.add("tool_calls", tcs);
-                    history.add(asstMsg.toString());
-
-                    String result = executeTool(call.name, call.arguments, cId, uName, text);
-
-                    JsonObject toolMsg = new JsonObject();
-                    toolMsg.addProperty("role", "tool");
-                    toolMsg.addProperty("tool_call_id", call.id);
-                    toolMsg.addProperty("content", result != null ? result : "ok");
-                    history.add(toolMsg.toString());
-
-                    break;
-                }
-
-                AiChatHelper.continueWithToolResults(provider, apiKey, model,
-                        systemPrompt, temperature, maxTokens, customEndpoint,
-                        toolDefs, history, this);
-            }
-
+        AiChatHelper.chat(provider, apiKey, prompt, model, systemPrompt,
+                temperature, maxTokens, customEndpoint,
+                new AiChatHelper.AiCallback() {
             @Override
             public void onSuccess(String responseText) {
                 addLog("AI: " + responseText);
                 currentMsgData.put("result", responseText);
-                    runOnUiThread(() -> {
-                        Snackbar.make(canvas, "AI: " + responseText,
-                                Snackbar.LENGTH_LONG).show();
-                        continueFlowSkipPhone(node, cId, uName, responseText, connectedPhoneMethods);
-                    });
+                runOnUiThread(() -> {
+                    Snackbar.make(canvas, "AI: " + responseText,
+                            Snackbar.LENGTH_LONG).show();
+                    continueFlow(node, cId, uName, responseText);
+                });
             }
 
             @Override
@@ -1749,7 +1669,7 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Snackbar.make(canvas,
                             "AI Error: " + error, Snackbar.LENGTH_LONG).show();
-                    continueFlowSkipPhone(node, cId, uName, "", connectedPhoneMethods);
+                    continueFlow(node, cId, uName, "");
                 });
             }
         });
