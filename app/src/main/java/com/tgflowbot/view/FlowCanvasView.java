@@ -24,10 +24,7 @@ import com.tgflowbot.model.NodeType;
 import com.tgflowbot.model.Workflow;
 
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 public class FlowCanvasView extends View {
 
@@ -63,31 +60,23 @@ public class FlowCanvasView extends View {
     private final Paint labelPaint;
     private boolean flowAnimating = false;
     private float flowPhase = 0f;
-    private final Set<String> flowSourceIds = new LinkedHashSet<>();
-    private final Set<String> flowConditionSourceIds = new HashSet<>();
-    private boolean flowConditionResult = false;
+    private String animSourceId;
+    private String animTargetId;
     private final Paint flowPaint;
     private final Handler flowHandler = new Handler();
     private final Runnable flowRunnable = new Runnable() {
         @Override
         public void run() {
-            if (flowSourceIds.isEmpty()) {
+            flowPhase += 6f;
+            if (flowPhase > 200f) {
                 flowAnimating = false;
-                flowConditionSourceIds.clear();
                 flowHandler.removeCallbacks(this);
                 invalidate();
                 return;
             }
-            flowPhase += 6f;
-            if (flowPhase > 200f) flowPhase -= 200f;
             invalidate();
             flowHandler.postDelayed(this, 30);
         }
-    };
-
-    private final Runnable flowStopRunnable = () -> {
-        flowSourceIds.clear();
-        flowConditionSourceIds.clear();
     };
 
     private PointF dropTargetPos;
@@ -367,7 +356,6 @@ public class FlowCanvasView extends View {
     }
 
     private void drawConnections(Canvas canvas) {
-        List<String> order = new ArrayList<>(flowSourceIds);
         for (Connection conn : workflow.getConnections()) {
             ViewNode sourceVn = getViewNodeByNodeId(conn.getSourceNodeId());
             ViewNode targetVn = getViewNodeByNodeId(conn.getTargetNodeId());
@@ -376,25 +364,11 @@ public class FlowCanvasView extends View {
                 PointF end = targetVn.getInputPort() != null ? targetVn.getInputPort().getCenter() : null;
                 if (start == null || end == null) continue;
 
-                boolean isCondSource = flowConditionSourceIds.contains(conn.getSourceNodeId());
-                int nodeIdx = -1;
-                if (flowAnimating) {
-                    for (int i = 0; i < order.size(); i++) {
-                        if (order.get(i).equals(conn.getSourceNodeId())) {
-                            nodeIdx = i;
-                            break;
-                        }
-                    }
-                }
-                boolean animatesThisLine = false;
-                if (nodeIdx >= 0) {
-                    if (isCondSource) {
-                        animatesThisLine = conn.getConditionResult() == flowConditionResult;
-                    } else {
-                        animatesThisLine = true;
-                    }
-                }
-                Paint paint = animatesThisLine ? getAnimatedFlowPaint(nodeIdx) : connectionPaint;
+                boolean animatesThisLine = flowAnimating
+                    && animSourceId != null && animSourceId.equals(conn.getSourceNodeId())
+                    && animTargetId != null && animTargetId.equals(conn.getTargetNodeId());
+
+                Paint paint = animatesThisLine ? getAnimatedFlowPaint() : connectionPaint;
                 drawBezierConnection(canvas, start.x, start.y, end.x, end.y, paint);
 
                 if (sourceVn.getData().getType() == com.tgflowbot.model.NodeType.CONDITION) {
@@ -407,9 +381,8 @@ public class FlowCanvasView extends View {
         }
     }
 
-    private Paint getAnimatedFlowPaint(int nodeIndex) {
-        float phaseOffset = nodeIndex * 20f;
-        flowPaint.setPathEffect(new DashPathEffect(new float[]{12f, 8f}, flowPhase - phaseOffset));
+    private Paint getAnimatedFlowPaint() {
+        flowPaint.setPathEffect(new DashPathEffect(new float[]{12f, 8f}, flowPhase));
         return flowPaint;
     }
 
@@ -424,27 +397,20 @@ public class FlowCanvasView extends View {
     }
 
     public void clearFlowPath() {
-        flowSourceIds.clear();
-        flowConditionSourceIds.clear();
-        flowHandler.removeCallbacks(flowStopRunnable);
+        flowAnimating = false;
+        animSourceId = null;
+        animTargetId = null;
+        flowHandler.removeCallbacks(flowRunnable);
+        invalidate();
     }
 
-    public void triggerPulse(String sourceNodeId) {
-        flowSourceIds.add(sourceNodeId);
-        flowHandler.removeCallbacks(flowStopRunnable);
-        if (!flowAnimating) {
-            flowAnimating = true;
-            flowPhase = 0f;
-            flowHandler.removeCallbacks(flowRunnable);
-            flowHandler.post(flowRunnable);
-        }
-        flowHandler.postDelayed(flowStopRunnable, 3000);
-    }
-
-    public void triggerConditionPulse(String sourceNodeId, boolean conditionResult) {
-        flowConditionResult = conditionResult;
-        flowConditionSourceIds.add(sourceNodeId);
-        triggerPulse(sourceNodeId);
+    public void animateConnection(String sourceId, String targetId) {
+        animSourceId = sourceId;
+        animTargetId = targetId;
+        flowPhase = 0f;
+        flowAnimating = true;
+        flowHandler.removeCallbacks(flowRunnable);
+        flowHandler.post(flowRunnable);
     }
 
     private void drawBezierConnection(Canvas canvas, float x1, float y1,

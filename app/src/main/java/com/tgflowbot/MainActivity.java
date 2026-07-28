@@ -1412,14 +1412,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void processFlowFromNode(FlowNode triggerNode, String chatId, String userName, String text) {
-        runOnUiThread(() -> {
-            canvas.clearFlowPath();
-            canvas.triggerPulse(triggerNode.getId());
-        });
+        runOnUiThread(() -> canvas.clearFlowPath());
         for (Connection conn : workflow.getConnections()) {
             if (conn.getSourceNodeId().equals(triggerNode.getId())) {
                 FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
                 if (next != null) {
+                    runOnUiThread(() -> canvas.animateConnection(triggerNode.getId(), next.getId()));
                     executeNode(next, chatId, userName, text);
                 }
             }
@@ -1453,13 +1451,14 @@ public class MainActivity extends AppCompatActivity {
             case CONDITION: {
                 boolean conditionMet = execCondition(method, node, text);
                 currentMsgData.put("result", conditionMet ? "true" : "false");
-                runOnUiThread(() ->
-                    canvas.triggerConditionPulse(node.getId(), conditionMet));
                 for (Connection conn : workflow.getConnections()) {
                     if (conn.getSourceNodeId().equals(node.getId())
                             && conn.getConditionResult() == conditionMet) {
                         FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
-                        if (next != null) executeNode(next, chatId, userName, text);
+                        if (next != null) {
+                            runOnUiThread(() -> canvas.animateConnection(node.getId(), next.getId()));
+                            executeNode(next, chatId, userName, text);
+                        }
                     }
                 }
                 break;
@@ -1661,7 +1660,6 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         Snackbar.make(canvas, "AI: " + responseText,
                                 Snackbar.LENGTH_LONG).show();
-                        canvas.triggerPulse(node.getId());
                         continueFlow(node, cId, uName, responseText);
                     });
                 }
@@ -1673,7 +1671,6 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         Snackbar.make(canvas,
                                 "AI Error: " + error, Snackbar.LENGTH_LONG).show();
-                        canvas.triggerPulse(node.getId());
                         continueFlow(node, cId, uName, "");
                     });
                 }
@@ -1725,12 +1722,11 @@ public class MainActivity extends AppCompatActivity {
             public void onSuccess(String responseText) {
                 addLog("AI: " + responseText);
                 currentMsgData.put("result", responseText);
-                runOnUiThread(() -> {
-                    Snackbar.make(canvas, "AI: " + responseText,
-                            Snackbar.LENGTH_LONG).show();
-                    canvas.triggerPulse(node.getId());
-                    continueFlow(node, cId, uName, responseText);
-                });
+                    runOnUiThread(() -> {
+                        Snackbar.make(canvas, "AI: " + responseText,
+                                Snackbar.LENGTH_LONG).show();
+                        continueFlow(node, cId, uName, responseText);
+                    });
             }
 
             @Override
@@ -1740,7 +1736,6 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Snackbar.make(canvas,
                             "AI Error: " + error, Snackbar.LENGTH_LONG).show();
-                    canvas.triggerPulse(node.getId());
                     continueFlow(node, cId, uName, "");
                 });
             }
@@ -1897,6 +1892,7 @@ public class MainActivity extends AppCompatActivity {
             if (conn.getSourceNodeId().equals(fromNode.getId())) {
                 FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
                 if (next != null) {
+                    runOnUiThread(() -> canvas.animateConnection(fromNode.getId(), next.getId()));
                     executeNode(next, chatId, userName, text);
                 }
             }
@@ -2144,7 +2140,6 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 runOnUiThread(() -> {
-                    canvas.triggerPulse(node.getId());
                     Snackbar.make(canvas, method.displayName + " berhasil", Snackbar.LENGTH_SHORT).show();
                     continueFlow(node, chatId, userName, flowText);
                 });
@@ -3284,7 +3279,6 @@ public class MainActivity extends AppCompatActivity {
                 }
             } catch (Exception ignored) {}
             runOnUiThread(() -> {
-                canvas.triggerPulse(node.getId());
                 continueFlow(node, chatId, userName, finalResult);
             });
         }).start();
@@ -3534,14 +3528,12 @@ public class MainActivity extends AppCompatActivity {
                         final String recognized = sttResult[0].isEmpty() ? sttText : sttResult[0];
                         if (!sttResult[0].isEmpty()) addLog("STT: " + sttResult[0]);
                         runOnUiThread(() -> {
-                            canvas.triggerPulse(sttNode.getId());
                             continueFlow(sttNode, sttChatId, sttUser, recognized);
                         });
                     }).start();
                     return;
                 }
             }
-            canvas.triggerPulse(node.getId());
             continueFlow(node, chatId, userName, text);
         });
     }
