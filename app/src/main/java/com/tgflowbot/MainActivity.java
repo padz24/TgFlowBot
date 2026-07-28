@@ -1792,8 +1792,8 @@ public class MainActivity extends AppCompatActivity {
         final float temperature = tempStr != null ? Float.parseFloat(tempStr) : 0.7f;
         String maxTokensStr = node.getProperty("max_tokens");
         final int maxTokens = maxTokensStr != null ? Integer.parseInt(maxTokensStr) : 1024;
-        String statusPrefix = node.getProperty("status_prefix");
-        if (statusPrefix == null) statusPrefix = "🤖";
+        String sp = node.getProperty("status_prefix");
+        final String statusPrefix = (sp != null) ? sp : "🤖";
 
         final String prompt = resolveTemplate(promptTemplate, text, chatId, userName);
 
@@ -1847,6 +1847,7 @@ public class MainActivity extends AppCompatActivity {
                     addLog("AI Agent: " + responseText);
                     currentMsgData.put("result", responseText);
                     sendTelegramMessage(chatId, statusPrefix + " " + responseText, null);
+
                     continueFlow(node, chatId, userName, responseText);
                 }
 
