@@ -24,7 +24,9 @@ import com.tgflowbot.model.NodeType;
 import com.tgflowbot.model.Workflow;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 
 public class FlowCanvasView extends View {
 
@@ -62,6 +64,7 @@ public class FlowCanvasView extends View {
     private float flowPhase = 0f;
     private String animSourceId;
     private String animTargetId;
+    private final Queue<String[]> animQueue = new LinkedList<>();
     private final Paint flowPaint;
     private final Handler flowHandler = new Handler();
     private final Runnable flowRunnable = new Runnable() {
@@ -71,13 +74,28 @@ public class FlowCanvasView extends View {
             if (flowPhase > 200f) {
                 flowAnimating = false;
                 flowHandler.removeCallbacks(this);
-                invalidate();
+                startNextQueuedAnim();
                 return;
             }
             invalidate();
             flowHandler.postDelayed(this, 30);
         }
     };
+
+    private void startNextQueuedAnim() {
+        String[] entry = animQueue.poll();
+        if (entry != null) {
+            animSourceId = entry[0];
+            animTargetId = entry[1];
+            flowPhase = 0f;
+            flowAnimating = true;
+            flowHandler.post(flowRunnable);
+        } else {
+            animSourceId = null;
+            animTargetId = null;
+            invalidate();
+        }
+    }
 
     private PointF dropTargetPos;
     private NodeType dropNodeType;
@@ -400,11 +418,16 @@ public class FlowCanvasView extends View {
         flowAnimating = false;
         animSourceId = null;
         animTargetId = null;
+        animQueue.clear();
         flowHandler.removeCallbacks(flowRunnable);
         invalidate();
     }
 
     public void animateConnection(String sourceId, String targetId) {
+        if (flowAnimating) {
+            animQueue.add(new String[]{sourceId, targetId});
+            return;
+        }
         animSourceId = sourceId;
         animTargetId = targetId;
         flowPhase = 0f;
