@@ -1431,6 +1431,9 @@ public class MainActivity extends AppCompatActivity {
         switch (node.getType()) {
             case CONDITION: {
                 boolean conditionMet = execCondition(method, node, text);
+                currentMsgData.put("result", conditionMet ? "true" : "false");
+                runOnUiThread(() ->
+                    canvas.triggerConditionPulse(node.getId(), conditionMet));
                 for (Connection conn : workflow.getConnections()) {
                     if (conn.getSourceNodeId().equals(node.getId())
                             && conn.getConditionResult() == conditionMet) {

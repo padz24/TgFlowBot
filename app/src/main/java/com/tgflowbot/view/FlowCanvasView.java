@@ -63,6 +63,8 @@ public class FlowCanvasView extends View {
     private boolean flowAnimating = false;
     private float flowPhase = 0f;
     private final Set<String> flowSourceIds = new HashSet<>();
+    private final Set<String> flowConditionSourceIds = new HashSet<>();
+    private boolean flowConditionResult = false;
     private final Paint flowPaint;
     private final Handler flowHandler = new Handler();
     private final Runnable flowRunnable = new Runnable() {
@@ -72,6 +74,7 @@ public class FlowCanvasView extends View {
             if (flowPhase > 200f) {
                 flowAnimating = false;
                 flowSourceIds.clear();
+                flowConditionSourceIds.clear();
                 invalidate();
                 return;
             }
@@ -365,8 +368,16 @@ public class FlowCanvasView extends View {
                 PointF end = targetVn.getInputPort() != null ? targetVn.getInputPort().getCenter() : null;
                 if (start == null || end == null) continue;
 
-                boolean isAnimating = flowAnimating && flowSourceIds.contains(conn.getSourceNodeId());
-                Paint paint = isAnimating ? getAnimatedFlowPaint() : connectionPaint;
+                boolean isCondSource = flowConditionSourceIds.contains(conn.getSourceNodeId());
+                boolean animatesThisLine = false;
+                if (flowAnimating && flowSourceIds.contains(conn.getSourceNodeId())) {
+                    if (isCondSource) {
+                        animatesThisLine = conn.getConditionResult() == flowConditionResult;
+                    } else {
+                        animatesThisLine = true;
+                    }
+                }
+                Paint paint = animatesThisLine ? getAnimatedFlowPaint() : connectionPaint;
                 drawBezierConnection(canvas, start.x, start.y, end.x, end.y, paint);
 
                 if (sourceVn.getData().getType() == com.tgflowbot.model.NodeType.CONDITION) {
@@ -400,6 +411,12 @@ public class FlowCanvasView extends View {
         flowSourceIds.add(sourceNodeId);
         flowHandler.removeCallbacks(flowRunnable);
         flowHandler.post(flowRunnable);
+    }
+
+    public void triggerConditionPulse(String sourceNodeId, boolean conditionResult) {
+        flowConditionResult = conditionResult;
+        flowConditionSourceIds.add(sourceNodeId);
+        triggerPulse(sourceNodeId);
     }
 
     private void drawBezierConnection(Canvas canvas, float x1, float y1,
