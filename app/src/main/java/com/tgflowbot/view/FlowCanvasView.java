@@ -24,6 +24,7 @@ import com.tgflowbot.model.NodeType;
 import com.tgflowbot.model.Workflow;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
