@@ -3923,8 +3923,11 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        if (isRunning) {
+            stopBackgroundPolling();
+        }
         saveWorkflow();
-        super.onBackPressed();
+        finishAffinity();
     }
 
     private String getJsonString(com.google.gson.JsonElement el) {

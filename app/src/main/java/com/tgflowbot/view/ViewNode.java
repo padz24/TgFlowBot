@@ -218,22 +218,22 @@ public class ViewNode {
 
         Drawable icon = ContextCompat.getDrawable(context, iconRes);
         if (icon != null) {
-            float iconL = bounds.left + 8f;
-            float iconT = headerBounds.top + 6f;
-            float iconS = headerBounds.height() - 12f;
+            float iconL = bounds.left + 6f;
+            float iconT = headerBounds.top + 5f;
+            float iconS = headerBounds.height() - 10f;
             icon.setBounds((int)iconL, (int)iconT, (int)(iconL + iconS), (int)(iconT + iconS));
             icon.setTint(Color.WHITE);
             icon.draw(canvas);
         }
 
-        float textX = bounds.left + 28f;
+        float textX = bounds.left + 38f;
         float textY = headerBounds.centerY() + textPaint.getTextSize() / 3f;
         String label = data.getLabel();
         if (label.length() > 16) label = label.substring(0, 14) + "..";
         canvas.drawText(label, textX, textY, textPaint);
 
         String typeLabel = getTypeLabel();
-        float bodyX = bounds.left + 28f;
+        float bodyX = bounds.left + 38f;
         float typeY = bodyBounds.top + 18f;
         canvas.drawText(typeLabel, bodyX, typeY, typePaint);
 
