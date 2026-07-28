@@ -35,7 +35,7 @@
         "system_prompt": "Kamu adalah asisten Telegram yang ramah. Jawab dengan bahasa Indonesia.",
         "temperature": "0.7",
         "max_tokens": "1024",
-        "use_phone_tools": "false"
+        "_subcat": "ai"
       }
     },
     {

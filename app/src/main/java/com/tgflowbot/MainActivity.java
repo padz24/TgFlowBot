@@ -1648,23 +1648,19 @@ public class MainActivity extends AppCompatActivity {
         final String cId = chatId;
         final String uName = userName;
 
-        String useToolsRaw = node.getProperty("use_phone_tools");
-        boolean useTools = "true".equalsIgnoreCase(useToolsRaw);
         Set<String> connectedPhoneMethods = new HashSet<>();
-        if (useTools) {
-            for (Connection conn : workflow.getConnections()) {
-                if (conn.getSourceNodeId().equals(node.getId())) {
-                    FlowNode target = workflow.findNodeById(conn.getTargetNodeId());
-                    if (target != null) {
-                        String m = target.getProperty("_method");
-                        if (m != null && m.startsWith("_phone_")) {
-                            connectedPhoneMethods.add(m);
-                        }
+        for (Connection conn : workflow.getConnections()) {
+            if (conn.getSourceNodeId().equals(node.getId())) {
+                FlowNode target = workflow.findNodeById(conn.getTargetNodeId());
+                if (target != null) {
+                    String m = target.getProperty("_method");
+                    if (m != null && m.startsWith("_phone_")) {
+                        connectedPhoneMethods.add(m);
                     }
                 }
             }
-            if (connectedPhoneMethods.isEmpty()) useTools = false;
         }
+        boolean useTools = !connectedPhoneMethods.isEmpty();
 
         if (!useTools) {
             AiChatHelper.chat(provider, apiKey, prompt, model, systemPrompt,
@@ -1828,23 +1824,19 @@ public class MainActivity extends AppCompatActivity {
 
         sendTelegramMessage(chatId, statusPrefix + " " + provider.name + " sedang berpikir...", null);
 
-        String useToolsRaw = node.getProperty("use_phone_tools");
-        boolean useTools = "true".equalsIgnoreCase(useToolsRaw);
         Set<String> connectedPhoneMethods = new HashSet<>();
-        if (useTools) {
-            for (Connection conn : workflow.getConnections()) {
-                if (conn.getSourceNodeId().equals(node.getId())) {
-                    FlowNode target = workflow.findNodeById(conn.getTargetNodeId());
-                    if (target != null) {
-                        String m = target.getProperty("_method");
-                        if (m != null && m.startsWith("_phone_")) {
-                            connectedPhoneMethods.add(m);
-                        }
+        for (Connection conn : workflow.getConnections()) {
+            if (conn.getSourceNodeId().equals(node.getId())) {
+                FlowNode target = workflow.findNodeById(conn.getTargetNodeId());
+                if (target != null) {
+                    String m = target.getProperty("_method");
+                    if (m != null && m.startsWith("_phone_")) {
+                        connectedPhoneMethods.add(m);
                     }
                 }
             }
-            if (connectedPhoneMethods.isEmpty()) useTools = false;
         }
+        boolean useTools = !connectedPhoneMethods.isEmpty();
 
         if (!useTools) {
             AiChatHelper.chat(provider, apiKey, prompt, model, systemPrompt,

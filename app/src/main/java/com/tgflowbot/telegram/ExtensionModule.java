@@ -1036,7 +1036,6 @@ public class ExtensionModule {
                         p("custom_endpoint", ParamDef.ParamType.STRING, false, "Endpoint custom (opsional)"),
                         p("temperature", ParamDef.ParamType.FLOAT, false, "Kreativitas 0-1", "0.7"),
                         p("max_tokens", ParamDef.ParamType.INTEGER, false, "Maksimal token respon", "1024"),
-                        p("use_phone_tools", ParamDef.ParamType.BOOLEAN, false, "Aktifkan phone tools AI", "false"),
                     }},
                     {"_ai_agent", "AI Agent", "AI Agent dengan auto-reply ke Telegram", NodeType.ACTION, new ParamDef[]{
                         p("prompt_template", ParamDef.ParamType.STRING, false, "Template prompt", "{{text}}"),
@@ -1046,7 +1045,6 @@ public class ExtensionModule {
                         p("custom_endpoint", ParamDef.ParamType.STRING, false, "Endpoint custom (opsional)"),
                         p("temperature", ParamDef.ParamType.FLOAT, false, "Kreativitas 0-1", "0.7"),
                         p("max_tokens", ParamDef.ParamType.INTEGER, false, "Maksimal token respon", "1024"),
-                        p("use_phone_tools", ParamDef.ParamType.BOOLEAN, false, "Aktifkan phone tools AI", "false"),
                         p("status_prefix", ParamDef.ParamType.STRING, false, "Prefix status", "🤖"),
                     }},
                 }));

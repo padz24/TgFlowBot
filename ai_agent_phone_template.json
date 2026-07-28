@@ -24,8 +24,8 @@
         "system_prompt": "Kamu adalah asisten Android yang bisa mengontrol perangkat. Jawab dengan bahasa Indonesia.",
         "temperature": "0.7",
         "max_tokens": "1024",
-        "use_phone_tools": "true",
-        "status_prefix": "🤖"
+        "status_prefix": "🤖",
+        "_subcat": "ai"
       }
     },
     {
