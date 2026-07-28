@@ -1,12 +1,21 @@
 package com.tgflowbot.view;
 
+import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 
+import androidx.core.content.ContextCompat;
+
+import com.tgflowbot.R;
 import com.tgflowbot.model.FlowNode;
+import com.tgflowbot.model.NodeType;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class ViewNode {
     private static final float NODE_WIDTH = 180f;
@@ -36,12 +45,38 @@ public class ViewNode {
     private final Paint portTouchPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint separatorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
+    private static final Map<String, int[]> SUBCAT_STYLES = new HashMap<>();
+    static {
+        SUBCAT_STYLES.put("tg",    new int[]{0xFF64B5F6, R.drawable.ic_action});
+        SUBCAT_STYLES.put("ai",    new int[]{0xFFCE93D8, R.drawable.ic_ai});
+        SUBCAT_STYLES.put("math",  new int[]{0xFF4DB6AC, R.drawable.ic_math});
+        SUBCAT_STYLES.put("text",  new int[]{0xFF4DD0E1, R.drawable.ic_text});
+        SUBCAT_STYLES.put("vars",  new int[]{0xFFFFD54F, R.drawable.ic_var});
+        SUBCAT_STYLES.put("flow",  new int[]{0xFFFF8A65, R.drawable.ic_flow});
+        SUBCAT_STYLES.put("phone", new int[]{0xFF81C784, R.drawable.ic_phone});
+        SUBCAT_STYLES.put("list",  new int[]{0xFF7986CB, R.drawable.ic_list});
+        SUBCAT_STYLES.put("op",    new int[]{0xFF90A4AE, R.drawable.ic_ops});
+        SUBCAT_STYLES.put("file",  new int[]{0xFFA1887F, R.drawable.ic_file});
+        SUBCAT_STYLES.put("http",  new int[]{0xFFE57373, R.drawable.ic_http});
+        SUBCAT_STYLES.put("data",  new int[]{0xFF64B5F6, R.drawable.ic_data});
+    }
+
+    private static final Map<NodeType, int[]> TYPE_STYLES = new HashMap<>();
+    static {
+        TYPE_STYLES.put(NodeType.TRIGGER,  new int[]{0xFFFFB74D, R.drawable.ic_trigger});
+        TYPE_STYLES.put(NodeType.ACTION,   new int[]{0xFF64B5F6, R.drawable.ic_action});
+        TYPE_STYLES.put(NodeType.CONDITION,new int[]{0xFF81C784, R.drawable.ic_condition});
+        TYPE_STYLES.put(NodeType.OUTPUT,   new int[]{0xFFCE93D8, R.drawable.ic_output});
+    }
+
+    private final Context context;
     private int headerColor = 0xFF1976D2;
     private int strokeColor = 0xFF1976D2;
+    private int iconRes = R.drawable.ic_action;
 
-    public ViewNode(FlowNode data) {
+    public ViewNode(Context context, FlowNode data) {
+        this.context = context;
         this.data = data;
         initPaints();
         updateColors();
@@ -86,30 +121,21 @@ public class ViewNode {
 
         portTouchPaint.setStyle(Paint.Style.STROKE);
         portTouchPaint.setStrokeWidth(1.5f);
-
-        iconPaint.setAntiAlias(true);
-        iconPaint.setStyle(Paint.Style.FILL);
     }
 
     private void updateColors() {
-        switch (data.getType()) {
-            case TRIGGER:
-                headerColor = 0xFFFF9800;
-                strokeColor = 0xFFFF9800;
-                break;
-            case ACTION:
-                headerColor = 0xFF2196F3;
-                strokeColor = 0xFF2196F3;
-                break;
-            case CONDITION:
-                headerColor = 0xFF4CAF50;
-                strokeColor = 0xFF4CAF50;
-                break;
-            case OUTPUT:
-                headerColor = 0xFF9C27B0;
-                strokeColor = 0xFF9C27B0;
-                break;
+        int[] style = null;
+        String subcat = data.getProperty("_subcat");
+        if (data.getType() == NodeType.ACTION && subcat != null) {
+            style = SUBCAT_STYLES.get(subcat);
         }
+        if (style == null) {
+            style = TYPE_STYLES.get(data.getType());
+            if (style == null) style = new int[]{0xFF1976D2, R.drawable.ic_action};
+        }
+        headerColor = style[0];
+        strokeColor = style[0];
+        iconRes = style[1];
         headerPaint.setColor(headerColor);
         bodyPaint.setColor(0xFFFFFFFF);
         strokePaint.setColor(strokeColor);
@@ -190,14 +216,15 @@ public class ViewNode {
 
         canvas.drawRoundRect(bounds, CORNER_RADIUS, CORNER_RADIUS, strokePaint);
 
-        float iconX = bounds.left + 12f;
-        float iconY = headerBounds.centerY();
-        float iconR = 8f;
-        iconPaint.setColor(Color.WHITE);
-        iconPaint.setAlpha(50);
-        canvas.drawCircle(iconX, iconY, iconR, iconPaint);
-        iconPaint.setAlpha(90);
-        canvas.drawCircle(iconX, iconY, iconR - 2f, iconPaint);
+        Drawable icon = ContextCompat.getDrawable(context, iconRes);
+        if (icon != null) {
+            float iconL = bounds.left + 8f;
+            float iconT = headerBounds.top + 6f;
+            float iconS = headerBounds.height() - 12f;
+            icon.setBounds((int)iconL, (int)iconT, (int)(iconL + iconS), (int)(iconT + iconS));
+            icon.setTint(Color.WHITE);
+            icon.draw(canvas);
+        }
 
         float textX = bounds.left + 28f;
         float textY = headerBounds.centerY() + textPaint.getTextSize() / 3f;

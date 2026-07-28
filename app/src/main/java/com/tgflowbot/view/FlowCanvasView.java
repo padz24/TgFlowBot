@@ -259,7 +259,7 @@ public class FlowCanvasView extends View {
 
     public void addNode(FlowNode node) {
         workflow.addNode(node);
-        viewNodes.add(new ViewNode(node));
+        viewNodes.add(new ViewNode(getContext(), node));
         invalidate();
     }
 
@@ -283,7 +283,7 @@ public class FlowCanvasView extends View {
     private void rebuildViewNodes() {
         viewNodes.clear();
         for (FlowNode node : workflow.getNodes()) {
-            viewNodes.add(new ViewNode(node));
+            viewNodes.add(new ViewNode(getContext(), node));
         }
     }
 

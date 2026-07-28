@@ -134,6 +134,7 @@ public class MainActivity extends AppCompatActivity {
                 Workflow loaded = new Gson().fromJson(workflowData, Workflow.class);
                 if (loaded != null) {
                     workflow = loaded;
+                    backfillSubcategories(workflow);
                     workflow.deduplicateConnections();
                 }
             } catch (Exception ignored) {}
@@ -166,6 +167,10 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onNodeDropped(FlowNode node) {
+                String methodName = node.getProperty("_method");
+                if (node.getType() == NodeType.ACTION && methodName != null && node.getProperty("_subcat") == null) {
+                    node.putProperty("_subcat", getActionSubcategory(methodName));
+                }
                 setDirty();
                 Snackbar.make(canvas, node.getLabel() + " ditambahkan", Snackbar.LENGTH_SHORT).show();
             }
@@ -267,6 +272,7 @@ public class MainActivity extends AppCompatActivity {
             drawerLayout.closeDrawer(findViewById(R.id.drawer_panel));
             FlowNode node = new FlowNode(item.name, item.type, 100f, 100f);
             if (item.methodName != null) node.putProperty("_method", item.methodName);
+            if (item.subcategory != null) node.putProperty("_subcat", item.subcategory);
             addNodeToCanvas(node);
         };
 
@@ -782,6 +788,15 @@ public class MainActivity extends AppCompatActivity {
         importLauncher.launch(new String[]{"application/json", "*/*"});
     }
 
+    private void backfillSubcategories(Workflow wf) {
+        for (FlowNode node : wf.getNodes()) {
+            if (node.getType() == NodeType.ACTION && node.getProperty("_subcat") == null) {
+                String methodName = node.getProperty("_method");
+                if (methodName != null) node.putProperty("_subcat", getActionSubcategory(methodName));
+            }
+        }
+    }
+
     private void importWorkflowFromUri(Uri uri) {
         try {
             InputStream is = getContentResolver().openInputStream(uri);
@@ -797,6 +812,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             workflow = loaded;
+            backfillSubcategories(workflow);
             workflow.deduplicateConnections();
             canvas.setWorkflow(workflow);
             canvas.invalidate();
