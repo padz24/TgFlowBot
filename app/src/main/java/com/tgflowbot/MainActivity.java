@@ -1673,7 +1673,7 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         Snackbar.make(canvas, "AI: " + responseText,
                                 Snackbar.LENGTH_LONG).show();
-                        continueFlow(node, cId, uName, responseText);
+                        continueFlowSkipPhone(node, cId, uName, responseText, connectedPhoneMethods);
                     });
                 }
 
@@ -1684,7 +1684,7 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         Snackbar.make(canvas,
                                 "AI Error: " + error, Snackbar.LENGTH_LONG).show();
-                        continueFlow(node, cId, uName, "");
+                        continueFlowSkipPhone(node, cId, uName, "", connectedPhoneMethods);
                     });
                 }
             });
@@ -1738,7 +1738,7 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         Snackbar.make(canvas, "AI: " + responseText,
                                 Snackbar.LENGTH_LONG).show();
-                        continueFlow(node, cId, uName, responseText);
+                        continueFlowSkipPhone(node, cId, uName, responseText, connectedPhoneMethods);
                     });
             }
 
@@ -1749,7 +1749,7 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Snackbar.make(canvas,
                             "AI Error: " + error, Snackbar.LENGTH_LONG).show();
-                    continueFlow(node, cId, uName, "");
+                    continueFlowSkipPhone(node, cId, uName, "", connectedPhoneMethods);
                 });
             }
         });
@@ -1848,7 +1848,7 @@ public class MainActivity extends AppCompatActivity {
                     currentMsgData.put("result", responseText);
                     sendTelegramMessage(chatId, statusPrefix + " " + responseText, null);
 
-                    continueFlow(node, chatId, userName, responseText);
+                    continueFlowSkipPhone(node, chatId, userName, responseText, connectedPhoneMethods);
                 }
 
                 @Override
@@ -1856,7 +1856,7 @@ public class MainActivity extends AppCompatActivity {
                     addLog("AI Agent Error: " + error);
                     currentMsgData.put("error", error);
                     sendTelegramMessage(chatId, statusPrefix + " Error: " + error, null);
-                    continueFlow(node, chatId, userName, "");
+                    continueFlowSkipPhone(node, chatId, userName, "", connectedPhoneMethods);
                 }
             });
             return;
@@ -1907,7 +1907,7 @@ public class MainActivity extends AppCompatActivity {
                 addLog("AI Agent: " + responseText);
                 currentMsgData.put("result", responseText);
                 sendTelegramMessage(chatId, statusPrefix + " " + responseText, null);
-                continueFlow(node, chatId, userName, responseText);
+                continueFlowSkipPhone(node, chatId, userName, responseText, connectedPhoneMethods);
             }
 
             @Override
@@ -1915,7 +1915,7 @@ public class MainActivity extends AppCompatActivity {
                 addLog("AI Agent Error: " + error);
                 currentMsgData.put("error", error);
                 sendTelegramMessage(chatId, statusPrefix + " Error: " + error, null);
-                continueFlow(node, chatId, userName, "");
+                continueFlowSkipPhone(node, chatId, userName, "", connectedPhoneMethods);
             }
         });
     }
@@ -2070,6 +2070,20 @@ public class MainActivity extends AppCompatActivity {
             if (conn.getSourceNodeId().equals(fromNode.getId())) {
                 FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
                 if (next != null) {
+                    runOnUiThread(() -> canvas.animateConnection(fromNode.getId(), next.getId()));
+                    executeNode(next, chatId, userName, text);
+                }
+            }
+        }
+    }
+
+    private void continueFlowSkipPhone(FlowNode fromNode, String chatId, String userName, String text, Set<String> phoneMethods) {
+        for (Connection conn : workflow.getConnections()) {
+            if (conn.getSourceNodeId().equals(fromNode.getId())) {
+                FlowNode next = workflow.findNodeById(conn.getTargetNodeId());
+                if (next != null) {
+                    String m = next.getProperty("_method");
+                    if (m != null && phoneMethods.contains(m)) continue;
                     runOnUiThread(() -> canvas.animateConnection(fromNode.getId(), next.getId()));
                     executeNode(next, chatId, userName, text);
                 }
