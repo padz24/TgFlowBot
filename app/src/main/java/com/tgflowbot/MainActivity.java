@@ -417,9 +417,9 @@ public class MainActivity extends AppCompatActivity {
             boolean expanded = expandedSections.contains(id);
             rv.setVisibility(expanded ? View.GONE : View.VISIBLE);
             if (v instanceof TextView) {
-                TextView tv = (TextView) v;
-                String t = tv.getText().toString();
-                tv.setText(expanded ? t.replace(" ▾", " ▸") : t.replace(" ▸", " ▾"));
+                TextView tv2 = (TextView) v;
+                String t = tv2.getText().toString();
+                tv2.setText(expanded ? t.replace(" ▾", " ▸") : t.replace(" ▸", " ▾"));
             }
             if (expanded) expandedSections.remove(id);
             else expandedSections.add(id);
