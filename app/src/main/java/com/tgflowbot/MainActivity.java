@@ -687,6 +687,7 @@ public class MainActivity extends AppCompatActivity {
         isRunning = false;
         bgHandler.removeCallbacks(pollRunnable);
         updateRunIcon();
+        canvas.clearFlowPath();
         Snackbar.make(canvas, "Workflow stopped", Snackbar.LENGTH_SHORT).show();
     }
 
@@ -1395,6 +1396,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void processFlowFromNode(FlowNode triggerNode, String chatId, String userName, String text) {
+        runOnUiThread(() -> {
+            canvas.clearFlowPath();
+            canvas.triggerPulse(triggerNode.getId());
+        });
         for (Connection conn : workflow.getConnections()) {
             if (conn.getSourceNodeId().equals(triggerNode.getId())) {
                 FlowNode next = workflow.findNodeById(conn.getTargetNodeId());

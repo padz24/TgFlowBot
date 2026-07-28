@@ -70,14 +70,15 @@ public class FlowCanvasView extends View {
     private final Runnable flowRunnable = new Runnable() {
         @Override
         public void run() {
-            flowPhase += 6f;
-            if (flowPhase > 200f) {
+            if (flowSourceIds.isEmpty()) {
                 flowAnimating = false;
-                flowSourceIds.clear();
                 flowConditionSourceIds.clear();
+                flowHandler.removeCallbacks(this);
                 invalidate();
                 return;
             }
+            flowPhase += 6f;
+            if (flowPhase > 200f) flowPhase -= 200f;
             invalidate();
             flowHandler.postDelayed(this, 30);
         }
@@ -405,12 +406,19 @@ public class FlowCanvasView extends View {
         return u * u * u * p0 + 3f * u * u * t * p1 + 3f * u * t * t * p2 + t * t * t * p3;
     }
 
+    public void clearFlowPath() {
+        flowSourceIds.clear();
+        flowConditionSourceIds.clear();
+    }
+
     public void triggerPulse(String sourceNodeId) {
-        flowAnimating = true;
-        flowPhase = 0f;
         flowSourceIds.add(sourceNodeId);
-        flowHandler.removeCallbacks(flowRunnable);
-        flowHandler.post(flowRunnable);
+        if (!flowAnimating) {
+            flowAnimating = true;
+            flowPhase = 0f;
+            flowHandler.removeCallbacks(flowRunnable);
+            flowHandler.post(flowRunnable);
+        }
     }
 
     public void triggerConditionPulse(String sourceNodeId, boolean conditionResult) {
