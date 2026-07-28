@@ -24,7 +24,9 @@ import com.tgflowbot.model.NodeType;
 import com.tgflowbot.model.Workflow;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class FlowCanvasView extends View {
 
@@ -60,7 +62,7 @@ public class FlowCanvasView extends View {
     private final Paint labelPaint;
     private boolean flowAnimating = false;
     private float flowPhase = 0f;
-    private String flowSourceNodeId;
+    private final Set<String> flowSourceIds = new HashSet<>();
     private final Paint flowPaint;
     private final Handler flowHandler = new Handler();
     private final Runnable flowRunnable = new Runnable() {
@@ -69,7 +71,7 @@ public class FlowCanvasView extends View {
             flowPhase += 6f;
             if (flowPhase > 200f) {
                 flowAnimating = false;
-                flowSourceNodeId = null;
+                flowSourceIds.clear();
                 invalidate();
                 return;
             }
@@ -355,7 +357,6 @@ public class FlowCanvasView extends View {
     }
 
     private void drawConnections(Canvas canvas) {
-        Paint animPaint = null;
         for (Connection conn : workflow.getConnections()) {
             ViewNode sourceVn = getViewNodeByNodeId(conn.getSourceNodeId());
             ViewNode targetVn = getViewNodeByNodeId(conn.getTargetNodeId());
@@ -364,7 +365,7 @@ public class FlowCanvasView extends View {
                 PointF end = targetVn.getInputPort() != null ? targetVn.getInputPort().getCenter() : null;
                 if (start == null || end == null) continue;
 
-                boolean isAnimating = flowAnimating && conn.getSourceNodeId().equals(flowSourceNodeId);
+                boolean isAnimating = flowAnimating && flowSourceIds.contains(conn.getSourceNodeId());
                 Paint paint = isAnimating ? getAnimatedFlowPaint() : connectionPaint;
                 drawBezierConnection(canvas, start.x, start.y, end.x, end.y, paint);
 
@@ -396,7 +397,7 @@ public class FlowCanvasView extends View {
     public void triggerPulse(String sourceNodeId) {
         flowAnimating = true;
         flowPhase = 0f;
-        flowSourceNodeId = sourceNodeId;
+        flowSourceIds.add(sourceNodeId);
         flowHandler.removeCallbacks(flowRunnable);
         flowHandler.post(flowRunnable);
     }
