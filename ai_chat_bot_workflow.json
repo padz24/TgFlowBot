@@ -1,0 +1,127 @@
+{
+  "nodes": [
+    {
+      "id": "trigger-001-aaaa-bbbb-cccc",
+      "label": "On Message",
+      "type": "TRIGGER",
+      "x": 100.0,
+      "y": 100.0,
+      "properties": {
+        "_method": "_on_message"
+      }
+    },
+    {
+      "id": "action-007-aaaa-bbbb-cccc",
+      "label": "Send Action",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 220.0,
+      "properties": {
+        "_method": "sendChatAction",
+        "action": "typing"
+      }
+    },
+    {
+      "id": "action-002-aaaa-bbbb-cccc",
+      "label": "AI Chat",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 380.0,
+      "properties": {
+        "_method": "ai_chat",
+        "prompt_template": "{{text}}",
+        "provider": "openai",
+        "model": "",
+        "system_prompt": "Kamu adalah asisten Telegram yang ramah. Jawab dengan bahasa Indonesia.",
+        "temperature": "0.7",
+        "max_tokens": "1024",
+        "use_phone_tools": "false"
+      }
+    },
+    {
+      "id": "action-003-aaaa-bbbb-cccc",
+      "label": "Set Variable",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 560.0,
+      "properties": {
+        "_method": "_set_variable",
+        "key": "ai_response",
+        "value": "{{result}}"
+      }
+    },
+    {
+      "id": "cond-004-aaaa-bbbb-cccc",
+      "label": "Has Key",
+      "type": "CONDITION",
+      "x": 100.0,
+      "y": 740.0,
+      "properties": {
+        "_method": "hasKey",
+        "key": "error"
+      }
+    },
+    {
+      "id": "action-005-aaaa-bbbb-cccc",
+      "label": "Send Message (Error)",
+      "type": "ACTION",
+      "x": 400.0,
+      "y": 740.0,
+      "properties": {
+        "_method": "sendMessage",
+        "text": "⚠️ Terjadi error: {{error}}",
+        "parse_mode": "HTML"
+      }
+    },
+    {
+      "id": "action-006-aaaa-bbbb-cccc",
+      "label": "Send Message (Success)",
+      "type": "ACTION",
+      "x": -250.0,
+      "y": 740.0,
+      "properties": {
+        "_method": "sendMessage",
+        "text": "🤖 {{$ai_response}}",
+        "parse_mode": "HTML"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn-001-bbbb-cccc-dddd",
+      "sourceNodeId": "trigger-001-aaaa-bbbb-cccc",
+      "targetNodeId": "action-007-aaaa-bbbb-cccc",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-006-bbbb-cccc-dddd",
+      "sourceNodeId": "action-007-aaaa-bbbb-cccc",
+      "targetNodeId": "action-002-aaaa-bbbb-cccc",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-002-bbbb-cccc-dddd",
+      "sourceNodeId": "action-002-aaaa-bbbb-cccc",
+      "targetNodeId": "action-003-aaaa-bbbb-cccc",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-003-bbbb-cccc-dddd",
+      "sourceNodeId": "action-003-aaaa-bbbb-cccc",
+      "targetNodeId": "cond-004-aaaa-bbbb-cccc",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-004-bbbb-cccc-dddd",
+      "sourceNodeId": "cond-004-aaaa-bbbb-cccc",
+      "targetNodeId": "action-005-aaaa-bbbb-cccc",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-005-bbbb-cccc-dddd",
+      "sourceNodeId": "cond-004-aaaa-bbbb-cccc",
+      "targetNodeId": "action-006-aaaa-bbbb-cccc",
+      "conditionResult": false
+    }
+  ]
+}

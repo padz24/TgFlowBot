@@ -1045,6 +1045,9 @@ public class ExtensionModule {
                     {"_log", "Log Message", "Tulis pesan ke log", NodeType.ACTION, new ParamDef[]{
                         p("message", ParamDef.ParamType.STRING, false, "Pesan log (kosongkan = pesan masuk)"),
                     }},
+                    {"_switch", "Switch Case", "Evaluasi ekspresi & simpan ke result (untuk pola switch-case)", NodeType.ACTION, new ParamDef[]{
+                        p("value", ParamDef.ParamType.STRING, true, "Ekspresi yang dievaluasi (bisa pakai {{placeholder}})"),
+                    }},
                 }));
 
         list.add(pack("Triggers", "com.tgflowbot.ext.triggers",

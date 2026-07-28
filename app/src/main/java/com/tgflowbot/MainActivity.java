@@ -50,6 +50,14 @@ import com.tgflowbot.view.FlowCanvasView;
 import com.tgflowbot.view.NodeAdapter;
 import com.tgflowbot.view.WorkflowAdapter;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -90,6 +98,15 @@ public class MainActivity extends AppCompatActivity {
             actionMathAdapter, actionTextAdapter, actionVarsAdapter, actionFlowAdapter,
             actionPhoneAdapter, actionListAdapter, actionOpAdapter, actionFileAdapter,
             actionHttpAdapter, conditionAdapter, outputAdapter;
+
+    private final ActivityResultLauncher<String> exportLauncher =
+            registerForActivityResult(new ActivityResultContracts.CreateDocument("application/json"), uri -> {
+                if (uri != null) exportWorkflowToUri(uri);
+            });
+    private final ActivityResultLauncher<String[]> importLauncher =
+            registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
+                if (uri != null) importWorkflowFromUri(uri);
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -391,7 +408,7 @@ public class MainActivity extends AppCompatActivity {
             return "file";
         if (apiName.startsWith("_http_request"))
             return "http";
-        if (apiName.equals("_log"))
+        if (apiName.equals("_log") || apiName.startsWith("_switch"))
             return "flow";
         if (apiName.startsWith("_phone_"))
             return "phone";
@@ -470,6 +487,12 @@ public class MainActivity extends AppCompatActivity {
             return true;
         } else if (id == R.id.action_about) {
             showAboutDialog();
+            return true;
+        } else if (id == R.id.action_export) {
+            exportWorkflow();
+            return true;
+        } else if (id == R.id.action_import) {
+            importWorkflow();
             return true;
         } else if (id == R.id.action_report_bug) {
             showReportBugDialog();
@@ -711,6 +734,56 @@ public class MainActivity extends AppCompatActivity {
                 .edit()
                 .putString("workflow_items", new Gson().toJson(items))
                 .apply();
+    }
+
+    private void exportWorkflow() {
+        String name = getIntent().getStringExtra("workflow_name");
+        if (name == null || name.isEmpty()) name = "workflow";
+        exportLauncher.launch(name + ".json");
+    }
+
+    private void exportWorkflowToUri(Uri uri) {
+        try {
+            OutputStream os = getContentResolver().openOutputStream(uri);
+            if (os == null) return;
+            OutputStreamWriter writer = new OutputStreamWriter(os);
+            writer.write(new Gson().toJson(workflow));
+            writer.flush();
+            writer.close();
+            Snackbar.make(canvas, "Workflow berhasil diexport", Snackbar.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Snackbar.make(canvas, "Gagal export: " + e.getMessage(), Snackbar.LENGTH_LONG).show();
+        }
+    }
+
+    private void importWorkflow() {
+        importLauncher.launch(new String[]{"application/json", "*/*"});
+    }
+
+    private void importWorkflowFromUri(Uri uri) {
+        try {
+            InputStream is = getContentResolver().openInputStream(uri);
+            if (is == null) return;
+            BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line);
+            reader.close();
+            Workflow loaded = new Gson().fromJson(sb.toString(), Workflow.class);
+            if (loaded == null) {
+                Snackbar.make(canvas, "Gagal import: file tidak valid", Snackbar.LENGTH_LONG).show();
+                return;
+            }
+            workflow = loaded;
+            workflow.deduplicateConnections();
+            canvas.setWorkflow(workflow);
+            canvas.invalidate();
+            setDirty();
+            saveWorkflow();
+            Snackbar.make(canvas, "Workflow berhasil diimport", Snackbar.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Snackbar.make(canvas, "Gagal import: " + e.getMessage(), Snackbar.LENGTH_LONG).show();
+        }
     }
 
     private void runWorkflow() {
@@ -1550,8 +1623,14 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onError(String error) {
-                    runOnUiThread(() -> Snackbar.make(canvas,
-                            "AI Error: " + error, Snackbar.LENGTH_LONG).show());
+                    addLog("AI Error: " + error);
+                    currentMsgData.put("error", error);
+                    runOnUiThread(() -> {
+                        Snackbar.make(canvas,
+                                "AI Error: " + error, Snackbar.LENGTH_LONG).show();
+                        canvas.triggerPulse(node.getId());
+                        continueFlow(node, cId, uName, "");
+                    });
                 }
             });
             return;
@@ -1611,8 +1690,14 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onError(String error) {
-                runOnUiThread(() -> Snackbar.make(canvas,
-                        "AI Error: " + error, Snackbar.LENGTH_LONG).show());
+                addLog("AI Error: " + error);
+                currentMsgData.put("error", error);
+                runOnUiThread(() -> {
+                    Snackbar.make(canvas,
+                            "AI Error: " + error, Snackbar.LENGTH_LONG).show();
+                    canvas.triggerPulse(node.getId());
+                    continueFlow(node, cId, uName, "");
+                });
             }
         });
     }
@@ -2002,15 +2087,21 @@ public class MainActivity extends AppCompatActivity {
             if (json.get("ok").getAsBoolean()) {
                 String resultStr = json.has("result") ? json.get("result").toString() : "{}";
                 addLog("[API] " + method.apiName + ": " + resultStr);
-                currentMsgData.put("result", resultStr);
-                com.google.gson.JsonElement resultEl = json.get("result");
-                if (resultEl != null) {
-                    flattenJsonTo("result", resultEl, currentMsgData);
+                final String flowText;
+                if ("sendChatAction".equals(method.apiName)) {
+                    flowText = text;
+                } else {
+                    flowText = resultStr;
+                    currentMsgData.put("result", resultStr);
+                    com.google.gson.JsonElement resultEl = json.get("result");
+                    if (resultEl != null) {
+                        flattenJsonTo("result", resultEl, currentMsgData);
+                    }
                 }
                 runOnUiThread(() -> {
                     canvas.triggerPulse(node.getId());
                     Snackbar.make(canvas, method.displayName + " berhasil", Snackbar.LENGTH_SHORT).show();
-                    continueFlow(node, chatId, userName, resultStr);
+                    continueFlow(node, chatId, userName, flowText);
                 });
             } else {
                 String desc = json.has("description") ?
@@ -2761,6 +2852,12 @@ public class MainActivity extends AppCompatActivity {
                     }
                     break;
                 }
+                case "_switch": {
+                    String switchValue = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    result = switchValue != null ? switchValue : "";
+                    addLog("Switch: " + result);
+                    break;
+                }
                 case "_log": {
                     String msg = resolveTemplate(node.getProperty("message"), text, chatId, userName);
                     if (msg == null || msg.isEmpty()) msg = text;
@@ -2772,6 +2869,12 @@ public class MainActivity extends AppCompatActivity {
 
             final String finalResult = result;
             currentMsgData.put("result", finalResult);
+            try {
+                com.google.gson.JsonElement el = com.google.gson.JsonParser.parseString(finalResult);
+                if (el.isJsonObject() || el.isJsonArray()) {
+                    flattenJsonTo("result", el, currentMsgData);
+                }
+            } catch (Exception ignored) {}
             runOnUiThread(() -> {
                 canvas.triggerPulse(node.getId());
                 continueFlow(node, chatId, userName, finalResult);

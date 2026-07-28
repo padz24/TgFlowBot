@@ -1,0 +1,139 @@
+{
+  "nodes": [
+    {
+      "id": "trg-manual-001",
+      "label": "Manual Trigger",
+      "type": "TRIGGER",
+      "x": 100.0,
+      "y": 100.0,
+      "properties": {
+        "_method": "_on_manual",
+        "input_data": "{}"
+      }
+    },
+    {
+      "id": "act-http-001",
+      "label": "HTTP Request",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 280.0,
+      "properties": {
+        "_method": "_http_request",
+        "method": "GET",
+        "url": "https://dummyjson.com/products/1"
+      }
+    },
+    {
+      "id": "act-switch-001",
+      "label": "Switch Case",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 460.0,
+      "properties": {
+        "_method": "_switch",
+        "value": "{{result.category}}"
+      }
+    },
+    {
+      "id": "cond-smartphone-001",
+      "label": "Equals",
+      "type": "CONDITION",
+      "x": 100.0,
+      "y": 640.0,
+      "properties": {
+        "_method": "equals",
+        "value": "smartphones",
+        "case_sensitive": "false"
+      }
+    },
+    {
+      "id": "act-log-smart-001",
+      "label": "Log Message",
+      "type": "ACTION",
+      "x": 400.0,
+      "y": 640.0,
+      "properties": {
+        "_method": "_log",
+        "message": "📱 Smartphone: {{result.title}} - ${{result.price}}"
+      }
+    },
+    {
+      "id": "cond-laptop-001",
+      "label": "Equals",
+      "type": "CONDITION",
+      "x": 100.0,
+      "y": 820.0,
+      "properties": {
+        "_method": "equals",
+        "value": "laptops",
+        "case_sensitive": "false"
+      }
+    },
+    {
+      "id": "act-log-laptop-001",
+      "label": "Log Message",
+      "type": "ACTION",
+      "x": 400.0,
+      "y": 820.0,
+      "properties": {
+        "_method": "_log",
+        "message": "💻 Laptop: {{result.title}} - ${{result.price}}"
+      }
+    },
+    {
+      "id": "act-log-other-001",
+      "label": "Log Message",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 1000.0,
+      "properties": {
+        "_method": "_log",
+        "message": "📦 {{result.category}}: {{result.title}} - ${{result.price}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn-m1",
+      "sourceNodeId": "trg-manual-001",
+      "targetNodeId": "act-http-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-m2",
+      "sourceNodeId": "act-http-001",
+      "targetNodeId": "act-switch-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-m3",
+      "sourceNodeId": "act-switch-001",
+      "targetNodeId": "cond-smartphone-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-m4",
+      "sourceNodeId": "cond-smartphone-001",
+      "targetNodeId": "act-log-smart-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-m5",
+      "sourceNodeId": "cond-smartphone-001",
+      "targetNodeId": "cond-laptop-001",
+      "conditionResult": false
+    },
+    {
+      "id": "conn-m6",
+      "sourceNodeId": "cond-laptop-001",
+      "targetNodeId": "act-log-laptop-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-m7",
+      "sourceNodeId": "cond-laptop-001",
+      "targetNodeId": "act-log-other-001",
+      "conditionResult": false
+    }
+  ]
+}

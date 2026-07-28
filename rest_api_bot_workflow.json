@@ -1,0 +1,204 @@
+{
+  "nodes": [
+    {
+      "id": "trg-product-001",
+      "label": "On Message",
+      "type": "TRIGGER",
+      "x": 100.0,
+      "y": 100.0,
+      "properties": {
+        "_method": "_on_message",
+        "command": "/product"
+      }
+    },
+    {
+      "id": "act-typing-001",
+      "label": "Send Action",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 250.0,
+      "properties": {
+        "_method": "sendChatAction",
+        "action": "typing"
+      }
+    },
+    {
+      "id": "act-http-001",
+      "label": "HTTP Request",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 400.0,
+      "properties": {
+        "_method": "_http_request",
+        "method": "GET",
+        "url": "https://dummyjson.com/products/1"
+      }
+    },
+    {
+      "id": "cond-err-001",
+      "label": "Has Key",
+      "type": "CONDITION",
+      "x": 100.0,
+      "y": 550.0,
+      "properties": {
+        "_method": "hasKey",
+        "key": "error"
+      }
+    },
+    {
+      "id": "act-err-001",
+      "label": "Send Message",
+      "type": "ACTION",
+      "x": 400.0,
+      "y": 550.0,
+      "properties": {
+        "_method": "sendMessage",
+        "text": "Error: {{error}}",
+        "parse_mode": "HTML"
+      }
+    },
+    {
+      "id": "act-ok-001",
+      "label": "Send Message",
+      "type": "ACTION",
+      "x": -280.0,
+      "y": 550.0,
+      "properties": {
+        "_method": "sendMessage",
+        "text": "<b>📱 {{result.title}}</b>\n💵 ${{result.price}} <i>({{result.discountPercentage}}% off)</i>\n⭐ {{result.rating}}/5\n🏷️ {{result.brand}} — {{result.category}}\n📝 {{result.description}}",
+        "parse_mode": "HTML"
+      }
+    },
+    {
+      "id": "trg-quote-001",
+      "label": "On Message",
+      "type": "TRIGGER",
+      "x": 700.0,
+      "y": 100.0,
+      "properties": {
+        "_method": "_on_message",
+        "command": "/quote"
+      }
+    },
+    {
+      "id": "act-qtyping-001",
+      "label": "Send Action",
+      "type": "ACTION",
+      "x": 700.0,
+      "y": 250.0,
+      "properties": {
+        "_method": "sendChatAction",
+        "action": "typing"
+      }
+    },
+    {
+      "id": "act-qhttp-001",
+      "label": "HTTP Request",
+      "type": "ACTION",
+      "x": 700.0,
+      "y": 400.0,
+      "properties": {
+        "_method": "_http_request",
+        "method": "GET",
+        "url": "https://dummyjson.com/quotes/random"
+      }
+    },
+    {
+      "id": "cond-qerr-001",
+      "label": "Has Key",
+      "type": "CONDITION",
+      "x": 700.0,
+      "y": 550.0,
+      "properties": {
+        "_method": "hasKey",
+        "key": "error"
+      }
+    },
+    {
+      "id": "act-qerr-001",
+      "label": "Send Message",
+      "type": "ACTION",
+      "x": 1000.0,
+      "y": 550.0,
+      "properties": {
+        "_method": "sendMessage",
+        "text": "Error: {{error}}",
+        "parse_mode": "HTML"
+      }
+    },
+    {
+      "id": "act-qok-001",
+      "label": "Send Message",
+      "type": "ACTION",
+      "x": 320.0,
+      "y": 550.0,
+      "properties": {
+        "_method": "sendMessage",
+        "text": "<i>\"{{result.quote}}\"</i>\n\n— <b>{{result.author}}</b>",
+        "parse_mode": "HTML"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn-p1",
+      "sourceNodeId": "trg-product-001",
+      "targetNodeId": "act-typing-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-p2",
+      "sourceNodeId": "act-typing-001",
+      "targetNodeId": "act-http-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-p3",
+      "sourceNodeId": "act-http-001",
+      "targetNodeId": "cond-err-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-p4",
+      "sourceNodeId": "cond-err-001",
+      "targetNodeId": "act-err-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-p5",
+      "sourceNodeId": "cond-err-001",
+      "targetNodeId": "act-ok-001",
+      "conditionResult": false
+    },
+    {
+      "id": "conn-q1",
+      "sourceNodeId": "trg-quote-001",
+      "targetNodeId": "act-qtyping-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-q2",
+      "sourceNodeId": "act-qtyping-001",
+      "targetNodeId": "act-qhttp-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-q3",
+      "sourceNodeId": "act-qhttp-001",
+      "targetNodeId": "cond-qerr-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-q4",
+      "sourceNodeId": "cond-qerr-001",
+      "targetNodeId": "act-qerr-001",
+      "conditionResult": true
+    },
+    {
+      "id": "conn-q5",
+      "sourceNodeId": "cond-qerr-001",
+      "targetNodeId": "act-qok-001",
+      "conditionResult": false
+    }
+  ]
+}

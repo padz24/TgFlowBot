@@ -32,6 +32,16 @@
     android:title="About"
     app:showAsAction="never" />
   <item
+    android:id="@+id/action_export"
+    android:icon="@drawable/ic_export"
+    android:title="Export Workflow"
+    app:showAsAction="never" />
+  <item
+    android:id="@+id/action_import"
+    android:icon="@drawable/ic_import"
+    android:title="Import Workflow"
+    app:showAsAction="never" />
+  <item
     android:id="@+id/action_report_bug"
     android:icon="@drawable/ic_bug_report"
     android:title="Report Bug"
