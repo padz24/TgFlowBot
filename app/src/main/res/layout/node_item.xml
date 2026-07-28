@@ -34,8 +34,7 @@
       android:layout_height="32dp"
       android:layout_marginStart="12dp"
       android:padding="6dp"
-      android:background="@drawable/circle_port"
-      android:backgroundTint="#15FFFFFF" />
+      android:background="@drawable/circle_port" />
 
     <LinearLayout
       android:layout_width="0dp"

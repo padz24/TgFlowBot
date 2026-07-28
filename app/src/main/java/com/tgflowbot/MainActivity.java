@@ -235,10 +235,10 @@ public class MainActivity extends AppCompatActivity {
         List<NodeAdapter.NodeItem> outputs = new ArrayList<>();
 
         for (TelegramMethod m : MethodRegistry.getAllMethods()) {
+            String subCat = m.nodeType == NodeType.ACTION ? getActionSubcategory(m.apiName) : null;
             NodeAdapter.NodeItem item = new NodeAdapter.NodeItem(
-                    m.displayName, m.description, m.nodeType, m.apiName);
+                    m.displayName, m.description, m.nodeType, m.apiName, subCat);
             if (m.nodeType == NodeType.ACTION) {
-                String subCat = getActionSubcategory(m.apiName);
                 switch (subCat) {
                     case "tg": actionsTg.add(item); break;
                     case "ai": actionsAi.add(item); break;
@@ -464,7 +464,17 @@ public class MainActivity extends AppCompatActivity {
         getMenuInflater().inflate(R.menu.main_menu, menu);
         runMenuItem = menu.findItem(R.id.action_run);
         updateRunIcon();
+        setOptionalIconsVisible(menu);
         return true;
+    }
+
+    private void setOptionalIconsVisible(Menu menu) {
+        try {
+            java.lang.reflect.Method m = menu.getClass().getDeclaredMethod(
+                    "setOptionalIconsVisible", Boolean.TYPE);
+            m.setAccessible(true);
+            m.invoke(menu, true);
+        } catch (Exception ignored) {}
     }
 
     @Override

@@ -52,6 +52,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_tg_inc" />
     <TextView
       android:id="@+id/sub_tg"
       android:layout_width="match_parent"
@@ -62,7 +63,7 @@
       android:text="TELEGRAM"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FF64B5F6"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -73,6 +74,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_ai_inc" />
     <TextView
       android:id="@+id/sub_ai"
       android:layout_width="match_parent"
@@ -80,10 +82,10 @@
       android:paddingHorizontal="16dp"
       android:paddingTop="12dp"
       android:paddingBottom="4dp"
-      android:text="AI"
+      android:text="AI CHAT"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FFCE93D8"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -94,6 +96,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_math_inc" />
     <TextView
       android:id="@+id/sub_math"
       android:layout_width="match_parent"
@@ -104,7 +107,7 @@
       android:text="MATH"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FF4DB6AC"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -115,6 +118,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_text_inc" />
     <TextView
       android:id="@+id/sub_text"
       android:layout_width="match_parent"
@@ -125,7 +129,7 @@
       android:text="TEXT"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FF4DD0E1"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -136,6 +140,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_vars_inc" />
     <TextView
       android:id="@+id/sub_vars"
       android:layout_width="match_parent"
@@ -146,7 +151,7 @@
       android:text="VARIABLES"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FFFFD54F"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -157,6 +162,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_flow_inc" />
     <TextView
       android:id="@+id/sub_flow"
       android:layout_width="match_parent"
@@ -167,7 +173,7 @@
       android:text="FLOW"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FFFF8A65"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -178,6 +184,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_phone_inc" />
     <TextView
       android:id="@+id/sub_phone"
       android:layout_width="match_parent"
@@ -188,7 +195,7 @@
       android:text="PHONE"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FF81C784"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -199,6 +206,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_list_inc" />
     <TextView
       android:id="@+id/sub_list"
       android:layout_width="match_parent"
@@ -206,10 +214,10 @@
       android:paddingHorizontal="16dp"
       android:paddingTop="12dp"
       android:paddingBottom="4dp"
-      android:text="LIST"
+      android:text="DATA &amp; LISTS"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FF7986CB"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -220,6 +228,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_op_inc" />
     <TextView
       android:id="@+id/sub_op"
       android:layout_width="match_parent"
@@ -230,7 +239,7 @@
       android:text="OPERATOR"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FF90A4AE"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -241,6 +250,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_file_inc" />
     <TextView
       android:id="@+id/sub_file"
       android:layout_width="match_parent"
@@ -251,7 +261,7 @@
       android:text="FILE"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FFA1887F"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
@@ -262,6 +272,7 @@
       android:nestedScrollingEnabled="false"
       app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
+    <include layout="@layout/sub_header" android:id="@+id/sub_http_inc" />
     <TextView
       android:id="@+id/sub_http"
       android:layout_width="match_parent"
@@ -272,7 +283,7 @@
       android:text="HTTP"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FFE57373"
       android:letterSpacing="0.1"
       android:visibility="gone" />
 
