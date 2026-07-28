@@ -85,6 +85,11 @@ public class FlowCanvasView extends View {
         }
     };
 
+    private final Runnable flowStopRunnable = () -> {
+        flowSourceIds.clear();
+        flowConditionSourceIds.clear();
+    };
+
     private PointF dropTargetPos;
     private NodeType dropNodeType;
 
@@ -421,16 +426,19 @@ public class FlowCanvasView extends View {
     public void clearFlowPath() {
         flowSourceIds.clear();
         flowConditionSourceIds.clear();
+        flowHandler.removeCallbacks(flowStopRunnable);
     }
 
     public void triggerPulse(String sourceNodeId) {
         flowSourceIds.add(sourceNodeId);
+        flowHandler.removeCallbacks(flowStopRunnable);
         if (!flowAnimating) {
             flowAnimating = true;
             flowPhase = 0f;
             flowHandler.removeCallbacks(flowRunnable);
             flowHandler.post(flowRunnable);
         }
+        flowHandler.postDelayed(flowStopRunnable, 3000);
     }
 
     public void triggerConditionPulse(String sourceNodeId, boolean conditionResult) {
