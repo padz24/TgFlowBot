@@ -3760,9 +3760,14 @@ public class MainActivity extends AppCompatActivity {
     private void showNodeActions(FlowNode node) {
         new MaterialAlertDialogBuilder(this)
                 .setTitle(node.getLabel())
-                .setItems(new CharSequence[]{"Edit Node", "Hapus Node"}, (d, w) -> {
+                .setItems(new CharSequence[]{"Edit Node", "Duplikat Node", "Hapus Node"}, (d, w) -> {
                     if (w == 0) {
                         openNodeEditor(node);
+                    } else if (w == 1) {
+                        FlowNode copy = node.duplicate(60f, 60f);
+                        canvas.addNode(copy);
+                        setDirty();
+                        Snackbar.make(canvas, "Node diduplikasi", Snackbar.LENGTH_SHORT).show();
                     } else {
                         selectedNode = node;
                         canvas.removeSelectedNode();

@@ -34,4 +34,10 @@ public class FlowNode {
     public void setProperties(Map<String, String> properties) { this.properties = properties; }
     public void putProperty(String key, String value) { this.properties.put(key, value); }
     public String getProperty(String key) { return this.properties.get(key); }
+
+    public FlowNode duplicate(float offsetX, float offsetY) {
+        FlowNode copy = new FlowNode(label, type, x + offsetX, y + offsetY);
+        copy.properties = new HashMap<>(properties);
+        return copy;
+    }
 }
