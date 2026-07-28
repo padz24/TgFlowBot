@@ -394,9 +394,9 @@ public class MainActivity extends AppCompatActivity {
             return "vars";
         if (apiName.startsWith("_delay") || apiName.equals("_return")
                 || apiName.startsWith("_repeat") || apiName.startsWith("_wait_")
-                || apiName.equals("_loop_break"))
+                || apiName.equals("_loop_break") || apiName.startsWith("_loop_"))
             return "flow";
-        if (apiName.startsWith("_list_"))
+        if (apiName.startsWith("_list_") || apiName.startsWith("_data_") || apiName.startsWith("_date_time"))
             return "list";
         if (apiName.startsWith("_power") || apiName.startsWith("_sqrt")
                 || apiName.startsWith("_abs") || apiName.startsWith("_round")
@@ -2630,7 +2630,7 @@ public class MainActivity extends AppCompatActivity {
                     addLog("Loop Break");
                     runOnUiThread(() -> {
                         for (Map.Entry<String, String> e : variables.entrySet()) {
-                            if (e.getKey().startsWith("_repeat_counter_")) {
+                            if (e.getKey().startsWith("_repeat_counter_") || e.getKey().startsWith("_loop_idx_") || e.getKey().startsWith("_split_idx_")) {
                                 variables.put(e.getKey(), "0");
                             }
                         }
@@ -2856,6 +2856,375 @@ public class MainActivity extends AppCompatActivity {
                     String switchValue = resolveTemplate(node.getProperty("value"), text, chatId, userName);
                     result = switchValue != null ? switchValue : "";
                     addLog("Switch: " + result);
+                    break;
+                }
+                case "_switch": {
+                    String switchValue = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    result = switchValue != null ? switchValue : "";
+                    addLog("Switch: " + result);
+                    break;
+                }
+                case "_loop_items": {
+                    String srcRaw = resolveTemplate(node.getProperty("source"), text, chatId, userName);
+                    if (srcRaw == null) srcRaw = result;
+                    String loopIdxKey = "_loop_idx_" + node.getId();
+                    String loopRaw = variables.get(loopIdxKey);
+                    int idx = 0;
+                    if (loopRaw != null) {
+                        try { idx = Integer.parseInt(loopRaw); } catch (Exception ignored) {}
+                    }
+                    try {
+                        com.google.gson.JsonArray arr = com.google.gson.JsonParser.parseString(srcRaw).getAsJsonArray();
+                        if (idx < arr.size()) {
+                            com.google.gson.JsonElement item = arr.get(idx);
+                            idx++;
+                            variables.put(loopIdxKey, String.valueOf(idx));
+                            String itemStr = item.isJsonPrimitive() ? item.getAsString() : item.toString();
+                            variables.put("loop_item", itemStr);
+                            variables.put("loop_index", String.valueOf(idx - 1));
+                            variables.put("loop_total", String.valueOf(arr.size()));
+                            com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+                            obj.addProperty("value", itemStr);
+                            obj.addProperty("index", idx - 1);
+                            obj.addProperty("total", arr.size());
+                            result = obj.toString();
+                            addLog("Loop: item " + idx + "/" + arr.size() + " = " + itemStr);
+                        } else {
+                            variables.remove(loopIdxKey);
+                            result = "{\"done\":true}";
+                            addLog("Loop: selesai (" + arr.size() + " items)");
+                        }
+                    } catch (Exception e) {
+                        variables.remove(loopIdxKey);
+                        result = "{\"error\":\"Invalid array: " + e.getMessage() + "\"}";
+                        addLog("Loop Error: " + e.getMessage());
+                    }
+                    break;
+                }
+                case "_data_set": {
+                    String mode = node.getProperty("mode");
+                    if (mode == null) mode = "set";
+                    String field = resolveTemplate(node.getProperty("field"), text, chatId, userName);
+                    String value = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    String newName = resolveTemplate(node.getProperty("new_name"), text, chatId, userName);
+                    switch (mode) {
+                        case "remove":
+                            if (field != null) currentMsgData.remove(field);
+                            addLog("Edit Fields: remove " + field);
+                            break;
+                        case "rename":
+                            if (field != null && newName != null && currentMsgData.containsKey(field)) {
+                                currentMsgData.put(newName, currentMsgData.remove(field));
+                            }
+                            addLog("Edit Fields: rename " + field + " -> " + newName);
+                            break;
+                        default:
+                            if (field != null && value != null) {
+                                currentMsgData.put(field, value);
+                            }
+                            addLog("Edit Fields: set " + field + " = " + value);
+                            break;
+                    }
+                    result = text;
+                    break;
+                }
+                case "_data_filter": {
+                    String srcRaw = resolveTemplate(node.getProperty("source"), text, chatId, userName);
+                    if (srcRaw == null) srcRaw = result;
+                    String filterField = resolveTemplate(node.getProperty("field"), text, chatId, userName);
+                    String condition = node.getProperty("condition");
+                    if (condition == null) condition = "equals";
+                    String filterValue = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    try {
+                        com.google.gson.JsonArray arr = com.google.gson.JsonParser.parseString(srcRaw).getAsJsonArray();
+                        com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+                        for (int i = 0; i < arr.size(); i++) {
+                            boolean match = false;
+                            com.google.gson.JsonElement el = arr.get(i);
+                            String val = el.isJsonObject() && filterField != null
+                                    ? getJsonString(el.getAsJsonObject().get(filterField))
+                                    : el.isJsonPrimitive() ? el.getAsString() : el.toString();
+                            if (val == null) val = "";
+                            switch (condition) {
+                                case "equals": match = val.equals(filterValue); break;
+                                case "contains": match = filterValue != null && val.contains(filterValue); break;
+                                case "greater": match = filterValue != null && Double.parseDouble(val) > Double.parseDouble(filterValue); break;
+                                case "less": match = filterValue != null && Double.parseDouble(val) < Double.parseDouble(filterValue); break;
+                                case "is_empty": match = val.isEmpty(); break;
+                                case "is_true": match = "true".equals(val); break;
+                                default: match = true;
+                            }
+                            if (match) out.add(el);
+                        }
+                        result = out.toString();
+                        addLog("Filter: " + arr.size() + " -> " + out.size() + " items");
+                    } catch (Exception e) {
+                        result = "[]";
+                        addLog("Filter Error: " + e.getMessage());
+                    }
+                    break;
+                }
+                case "_data_splitout": {
+                    String srcRaw = resolveTemplate(node.getProperty("source"), text, chatId, userName);
+                    if (srcRaw == null) srcRaw = result;
+                    String key = node.getProperty("key");
+                    try {
+                        com.google.gson.JsonArray arr = com.google.gson.JsonParser.parseString(srcRaw).getAsJsonArray();
+                        String idxKey = "_split_idx_" + node.getId();
+                        String rawIdx = variables.get(idxKey);
+                        int idx = 0;
+                        if (rawIdx != null) { try { idx = Integer.parseInt(rawIdx); } catch (Exception ignored) {} }
+                        if (arr.size() > 0 && idx < arr.size()) {
+                            com.google.gson.JsonElement item = arr.get(idx);
+                            result = item.isJsonPrimitive() ? item.getAsString() : item.toString();
+                            if (key != null && !key.isEmpty() && item.isJsonObject()) {
+                                com.google.gson.JsonElement keyVal = item.getAsJsonObject().get(key);
+                                if (keyVal != null) result = keyVal.isJsonPrimitive() ? keyVal.getAsString() : keyVal.toString();
+                            }
+                            idx++;
+                            variables.put(idxKey, String.valueOf(idx));
+                            variables.put("split_item_" + node.getId(), result);
+                            if (key != null && !key.isEmpty()) {
+                                variables.put("split_key", result);
+                            }
+                            variables.put("split_index", String.valueOf(idx - 1));
+                            variables.put("split_total", String.valueOf(arr.size()));
+                            addLog("Split Out: item " + idx + "/" + arr.size() + " = " + result);
+                        } else {
+                            variables.remove(idxKey);
+                            result = "{\"done\":true}";
+                            addLog("Split Out: selesai (" + arr.size() + " items)");
+                        }
+                    } catch (Exception e) {
+                        result = "{\"error\":\"" + e.getMessage() + "\"}";
+                        addLog("Split Out Error: " + e.getMessage());
+                    }
+                    break;
+                }
+                case "_data_aggregate": {
+                    String srcRaw = resolveTemplate(node.getProperty("source"), text, chatId, userName);
+                    if (srcRaw == null) srcRaw = result;
+                    String groupKey = resolveTemplate(node.getProperty("group_key"), text, chatId, userName);
+                    try {
+                        com.google.gson.JsonArray arr = com.google.gson.JsonParser.parseString(srcRaw).getAsJsonArray();
+                        if (groupKey == null || groupKey.isEmpty()) {
+                            com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+                            for (int i = 0; i < arr.size(); i++) {
+                                com.google.gson.JsonElement item = arr.get(i);
+                                if (item.isJsonObject()) {
+                                    out.add(item);
+                                } else {
+                                    com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+                                    obj.addProperty("value", item.isJsonPrimitive() ? item.getAsString() : item.toString());
+                                    out.add(obj);
+                                }
+                            }
+                            result = out.toString();
+                        } else {
+                            java.util.LinkedHashMap<String, com.google.gson.JsonArray> groups = new java.util.LinkedHashMap<>();
+                            for (int i = 0; i < arr.size(); i++) {
+                                com.google.gson.JsonElement item = arr.get(i);
+                                String gKey = item.isJsonObject() ? getJsonString(item.getAsJsonObject().get(groupKey)) : "";
+                                if (gKey == null) gKey = "";
+                                if (!groups.containsKey(gKey)) groups.put(gKey, new com.google.gson.JsonArray());
+                                groups.get(gKey).add(item);
+                            }
+                            com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+                            for (java.util.Map.Entry<String, com.google.gson.JsonArray> g : groups.entrySet()) {
+                                com.google.gson.JsonObject grp = new com.google.gson.JsonObject();
+                                grp.addProperty("key", g.getKey());
+                                grp.add("items", g.getValue());
+                                grp.addProperty("count", g.getValue().size());
+                                out.add(grp);
+                            }
+                            result = out.toString();
+                        }
+                        addLog("Aggregate: " + result);
+                    } catch (Exception e) {
+                        result = "[]";
+                        addLog("Aggregate Error: " + e.getMessage());
+                    }
+                    break;
+                }
+                case "_data_summarize": {
+                    String srcRaw = resolveTemplate(node.getProperty("source"), text, chatId, userName);
+                    if (srcRaw == null) srcRaw = result;
+                    String groupField = resolveTemplate(node.getProperty("group_field"), text, chatId, userName);
+                    String aggregation = node.getProperty("aggregation");
+                    if (aggregation == null) aggregation = "count";
+                    String valField = resolveTemplate(node.getProperty("value_field"), text, chatId, userName);
+                    try {
+                        com.google.gson.JsonArray arr = com.google.gson.JsonParser.parseString(srcRaw).getAsJsonArray();
+                        java.util.LinkedHashMap<String, com.google.gson.JsonArray> groups = new java.util.LinkedHashMap<>();
+                        if (groupField != null && !groupField.isEmpty()) {
+                            for (int i = 0; i < arr.size(); i++) {
+                                com.google.gson.JsonElement item = arr.get(i);
+                                String gKey = item.isJsonObject() ? getJsonString(item.getAsJsonObject().get(groupField)) : "";
+                                if (gKey == null) gKey = "";
+                                if (!groups.containsKey(gKey)) groups.put(gKey, new com.google.gson.JsonArray());
+                                groups.get(gKey).add(item);
+                            }
+                        } else {
+                            groups.put("all", arr);
+                        }
+                        com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+                        for (java.util.Map.Entry<String, com.google.gson.JsonArray> g : groups.entrySet()) {
+                            com.google.gson.JsonObject row = new com.google.gson.JsonObject();
+                            row.addProperty("group", g.getKey());
+                            com.google.gson.JsonArray items = g.getValue();
+                            row.addProperty("count", items.size());
+                            if ("sum".equals(aggregation) || "avg".equals(aggregation) || "min".equals(aggregation) || "max".equals(aggregation)) {
+                                double total = 0;
+                                double minVal = Double.MAX_VALUE;
+                                double maxVal = -Double.MAX_VALUE;
+                                int numericCount = 0;
+                                for (int i = 0; i < items.size(); i++) {
+                                    String raw = null;
+                                    if (valField != null && !valField.isEmpty() && items.get(i).isJsonObject()) {
+                                        raw = getJsonString(items.get(i).getAsJsonObject().get(valField));
+                                    } else {
+                                        raw = items.get(i).isJsonPrimitive() ? items.get(i).getAsString() : null;
+                                    }
+                                    if (raw != null) {
+                                        try {
+                                            double d = Double.parseDouble(raw);
+                                            total += d;
+                                            if (d < minVal) minVal = d;
+                                            if (d > maxVal) maxVal = d;
+                                            numericCount++;
+                                        } catch (Exception ignored) {}
+                                    }
+                                }
+                                switch (aggregation) {
+                                    case "sum": row.addProperty("result", total); break;
+                                    case "avg": row.addProperty("result", numericCount > 0 ? total / numericCount : 0); break;
+                                    case "min": row.addProperty("result", numericCount > 0 ? minVal : 0); break;
+                                    case "max": row.addProperty("result", numericCount > 0 ? maxVal : 0); break;
+                                }
+                            }
+                            out.add(row);
+                        }
+                        result = out.toString();
+                        addLog("Summarize: " + result);
+                    } catch (Exception e) {
+                        result = "[]";
+                        addLog("Summarize Error: " + e.getMessage());
+                    }
+                    break;
+                }
+                case "_data_merge": {
+                    String mode = node.getProperty("mode");
+                    if (mode == null) mode = "combine";
+                    String src2Raw = resolveTemplate(node.getProperty("source2"), text, chatId, userName);
+                    if (src2Raw == null) src2Raw = "[]";
+                    String mergeField = resolveTemplate(node.getProperty("merge_field"), text, chatId, userName);
+                    try {
+                        com.google.gson.JsonArray arr1 = com.google.gson.JsonParser.parseString(result).getAsJsonArray();
+                        com.google.gson.JsonArray arr2 = com.google.gson.JsonParser.parseString(src2Raw).getAsJsonArray();
+                        com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+                        if ("combine".equals(mode)) {
+                            for (com.google.gson.JsonElement e : arr1) out.add(e);
+                            for (com.google.gson.JsonElement e : arr2) out.add(e);
+                        } else if ("merge_by_field".equals(mode) && mergeField != null) {
+                            java.util.HashMap<String, com.google.gson.JsonObject> map = new java.util.HashMap<>();
+                            for (com.google.gson.JsonElement e : arr1) {
+                                if (e.isJsonObject()) {
+                                    String key = getJsonString(e.getAsJsonObject().get(mergeField));
+                                    if (key != null) map.put(key, e.getAsJsonObject());
+                                }
+                            }
+                            for (com.google.gson.JsonElement e : arr2) {
+                                if (e.isJsonObject()) {
+                                    String key = getJsonString(e.getAsJsonObject().get(mergeField));
+                                    if (key != null && map.containsKey(key)) {
+                                        com.google.gson.JsonObject merged = new com.google.gson.JsonObject();
+                                        com.google.gson.JsonObject obj2 = e.getAsJsonObject();
+                                        for (String k : map.get(key).keySet()) merged.add(k, map.get(key).get(k));
+                                        for (String k : obj2.keySet()) merged.add(k, obj2.get(k));
+                                        out.add(merged);
+                                        map.remove(key);
+                                    }
+                                }
+                            }
+                            for (com.google.gson.JsonObject remaining : map.values()) out.add(remaining);
+                        }
+                        result = out.toString();
+                        addLog("Merge: " + arr1.size() + " + " + arr2.size() + " = " + out.size() + " items");
+                    } catch (Exception e) {
+                        result = "[]";
+                        addLog("Merge Error: " + e.getMessage());
+                    }
+                    break;
+                }
+                case "_date_time": {
+                    String op = node.getProperty("operation");
+                    if (op == null) op = "now";
+                    String fmt = node.getProperty("format");
+                    if (fmt == null) fmt = "dd/MM/yyyy HH:mm:ss";
+                    String valStr = resolveTemplate(node.getProperty("value"), text, chatId, userName);
+                    String srcDate = resolveTemplate(node.getProperty("source_date"), text, chatId, userName);
+                    try {
+                        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(fmt, java.util.Locale.getDefault());
+                        java.util.Date now = new java.util.Date();
+                        java.util.Date source = now;
+                        if (op.equals("format_iso")) {
+                            java.text.SimpleDateFormat isoFmt = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault());
+                            isoFmt.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                            result = isoFmt.format(now);
+                        } else if (op.equals("format")) {
+                            if (srcDate != null && !srcDate.isEmpty()) {
+                                try {
+                                    source = sdf.parse(srcDate);
+                                } catch (Exception e) {
+                                    try {
+                                        java.text.SimpleDateFormat iso = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault());
+                                        iso.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                                        source = iso.parse(srcDate);
+                                    } catch (Exception e2) {
+                                        source = now;
+                                    }
+                                }
+                            }
+                            result = sdf.format(source);
+                        } else if (op.equals("now")) {
+                            result = sdf.format(now);
+                        } else if (op.startsWith("add_")) {
+                            java.util.Calendar cal = java.util.Calendar.getInstance();
+                            if (srcDate != null && !srcDate.isEmpty()) {
+                                try { cal.setTime(sdf.parse(srcDate)); } catch (Exception ignored) {}
+                            }
+                            int amount = 0;
+                            try { amount = Integer.parseInt(valStr != null ? valStr : "0"); } catch (Exception ignored) {}
+                            switch (op) {
+                                case "add_seconds": cal.add(java.util.Calendar.SECOND, amount); break;
+                                case "add_minutes": cal.add(java.util.Calendar.MINUTE, amount); break;
+                                case "add_hours": cal.add(java.util.Calendar.HOUR_OF_DAY, amount); break;
+                                case "add_days": cal.add(java.util.Calendar.DAY_OF_MONTH, amount); break;
+                                case "add_months": cal.add(java.util.Calendar.MONTH, amount); break;
+                                case "add_years": cal.add(java.util.Calendar.YEAR, amount); break;
+                            }
+                            result = sdf.format(cal.getTime());
+                        } else if (op.equals("diff")) {
+                            if (srcDate != null && !srcDate.isEmpty() && valStr != null && !valStr.isEmpty()) {
+                                try {
+                                    java.util.Date d1 = sdf.parse(srcDate);
+                                    java.util.Date d2 = sdf.parse(valStr);
+                                    long diffMs = Math.abs(d2.getTime() - d1.getTime());
+                                    result = String.valueOf(diffMs);
+                                } catch (Exception e) {
+                                    result = "0";
+                                }
+                            } else {
+                                result = "0";
+                            }
+                        } else {
+                            result = sdf.format(now);
+                        }
+                        addLog("Date/Time: " + result);
+                    } catch (Exception e) {
+                        result = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date());
+                        addLog("Date/Time Error: " + e.getMessage());
+                    }
                     break;
                 }
                 case "_log": {
@@ -3520,5 +3889,12 @@ public class MainActivity extends AppCompatActivity {
     public void onBackPressed() {
         saveWorkflow();
         super.onBackPressed();
+    }
+
+    private String getJsonString(com.google.gson.JsonElement el) {
+        if (el == null) return null;
+        if (el.isJsonNull()) return null;
+        if (el.isJsonPrimitive()) return el.getAsString();
+        return el.toString();
     }
 }

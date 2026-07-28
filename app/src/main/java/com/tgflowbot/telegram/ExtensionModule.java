@@ -981,6 +981,49 @@ public class ExtensionModule {
                     }},
                 }));
 
+        list.add(pack("Data & Arrays", "com.tgflowbot.ext.data",
+                "Transform and manipulate data: edit fields, filter, split, aggregate, summarize, merge arrays and data streams.",
+                "Utility",
+                new Object[][]{
+                    {"_data_set", "Edit Fields", "Tambah/ubah/hapus field di data", NodeType.ACTION, new ParamDef[]{
+                        p("mode", ParamDef.ParamType.STRING, false, "set/remove/rename", "set"),
+                        p("field", ParamDef.ParamType.STRING, true, "Nama field"),
+                        p("value", ParamDef.ParamType.STRING, false, "Nilai (untuk mode set)"),
+                        p("new_name", ParamDef.ParamType.STRING, false, "Nama baru (untuk mode rename)"),
+                    }},
+                    {"_data_filter", "Filter", "Saring item array berdasarkan kondisi", NodeType.ACTION, new ParamDef[]{
+                        p("source", ParamDef.ParamType.STRING, false, "Array JSON (kosongkan = {{result}})", "{{result}}"),
+                        p("field", ParamDef.ParamType.STRING, false, "Field yang dicek"),
+                        p("condition", ParamDef.ParamType.STRING, false, "equals/contains/greater/less/is_empty/is_true", "equals"),
+                        p("value", ParamDef.ParamType.STRING, false, "Nilai pembanding"),
+                    }},
+                    {"_data_splitout", "Split Out", "Pecah array jadi item per item", NodeType.ACTION, new ParamDef[]{
+                        p("source", ParamDef.ParamType.STRING, false, "Array JSON (kosongkan = {{result}})", "{{result}}"),
+                        p("key", ParamDef.ParamType.STRING, false, "Field key untuk tiap item (opsional)"),
+                    }},
+                    {"_data_aggregate", "Aggregate", "Gabung item jadi array", NodeType.ACTION, new ParamDef[]{
+                        p("source", ParamDef.ParamType.STRING, false, "JSON array sumber", "{{result}}"),
+                        p("group_key", ParamDef.ParamType.STRING, false, "Field untuk grouping (opsional)"),
+                    }},
+                    {"_data_summarize", "Summarize", "Group & aggregate (count/sum/avg/min/max)", NodeType.ACTION, new ParamDef[]{
+                        p("source", ParamDef.ParamType.STRING, false, "Array JSON sumber", "{{result}}"),
+                        p("group_field", ParamDef.ParamType.STRING, false, "Field untuk grouping"),
+                        p("aggregation", ParamDef.ParamType.STRING, false, "count/sum/avg/min/max", "count"),
+                        p("value_field", ParamDef.ParamType.STRING, false, "Field numerik (untuk sum/avg/min/max)"),
+                    }},
+                    {"_data_merge", "Merge", "Gabung dua data stream", NodeType.ACTION, new ParamDef[]{
+                        p("mode", ParamDef.ParamType.STRING, false, "combine/merge_by_field", "combine"),
+                        p("source2", ParamDef.ParamType.STRING, false, "Array JSON kedua", "[]"),
+                        p("merge_field", ParamDef.ParamType.STRING, false, "Field untuk join (mode merge_by_field)"),
+                    }},
+                    {"_date_time", "Date & Time", "Format & manipulasi tanggal/waktu", NodeType.ACTION, new ParamDef[]{
+                        p("operation", ParamDef.ParamType.STRING, false, "now/format/add_seconds/add_minutes/add_hours/add_days/add_months/add_years/diff/format_iso", "now"),
+                        p("format", ParamDef.ParamType.STRING, false, "Format output (mis: dd/MM/yyyy HH:mm:ss)", "dd/MM/yyyy HH:mm:ss"),
+                        p("value", ParamDef.ParamType.STRING, false, "Nilai untuk operasi add/diff"),
+                        p("source_date", ParamDef.ParamType.STRING, false, "Tanggal sumber (opsional, default = sekarang)"),
+                    }},
+                }));
+
         list.add(pack("AI Chat", "com.tgflowbot.ext.ai",
                 "Chat with AI providers (OpenAI, Claude, Gemini, Groq, LLamaCPP) and use AI phone tools.",
                 "Intelligence",
@@ -1047,6 +1090,9 @@ public class ExtensionModule {
                     }},
                     {"_switch", "Switch Case", "Evaluasi ekspresi & simpan ke result (untuk pola switch-case)", NodeType.ACTION, new ParamDef[]{
                         p("value", ParamDef.ParamType.STRING, true, "Ekspresi yang dievaluasi (bisa pakai {{placeholder}})"),
+                    }},
+                    {"_loop_items", "Loop Over Items", "Loop atas tiap item dalam array", NodeType.ACTION, new ParamDef[]{
+                        p("source", ParamDef.ParamType.STRING, false, "Array JSON sumber", "{{result}}"),
                     }},
                 }));
 

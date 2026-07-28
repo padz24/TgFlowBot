@@ -1,0 +1,91 @@
+{
+  "nodes": [
+    {
+      "id": "trg-manual-d1",
+      "label": "Manual Trigger",
+      "type": "TRIGGER",
+      "x": 100.0,
+      "y": 100.0,
+      "properties": {
+        "_method": "_on_manual",
+        "input_data": "{}"
+      }
+    },
+    {
+      "id": "act-http-d1",
+      "label": "HTTP Request",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 280.0,
+      "properties": {
+        "_method": "_http_request",
+        "method": "GET",
+        "url": "https://dummyjson.com/products?limit=30"
+      }
+    },
+    {
+      "id": "act-filter-d1",
+      "label": "Filter",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 460.0,
+      "properties": {
+        "_method": "_data_filter",
+        "source": "{{result.products}}",
+        "field": "price",
+        "condition": "greater",
+        "value": "30"
+      }
+    },
+    {
+      "id": "act-summarize-d1",
+      "label": "Summarize",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 640.0,
+      "properties": {
+        "_method": "_data_summarize",
+        "source": "{{result}}",
+        "group_field": "category",
+        "aggregation": "count"
+      }
+    },
+    {
+      "id": "act-log-d1",
+      "label": "Log Message",
+      "type": "ACTION",
+      "x": 100.0,
+      "y": 820.0,
+      "properties": {
+        "_method": "_log",
+        "message": "Produk per kategori (harga > $30): {{result}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "con-d1",
+      "sourceNodeId": "trg-manual-d1",
+      "targetNodeId": "act-http-d1",
+      "conditionResult": true
+    },
+    {
+      "id": "con-d2",
+      "sourceNodeId": "act-http-d1",
+      "targetNodeId": "act-filter-d1",
+      "conditionResult": true
+    },
+    {
+      "id": "con-d3",
+      "sourceNodeId": "act-filter-d1",
+      "targetNodeId": "act-summarize-d1",
+      "conditionResult": true
+    },
+    {
+      "id": "con-d4",
+      "sourceNodeId": "act-summarize-d1",
+      "targetNodeId": "act-log-d1",
+      "conditionResult": true
+    }
+  ]
+}
