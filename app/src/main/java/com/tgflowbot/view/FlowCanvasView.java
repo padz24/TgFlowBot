@@ -24,7 +24,7 @@ import com.tgflowbot.model.NodeType;
 import com.tgflowbot.model.Workflow;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -62,7 +62,7 @@ public class FlowCanvasView extends View {
     private final Paint labelPaint;
     private boolean flowAnimating = false;
     private float flowPhase = 0f;
-    private final Set<String> flowSourceIds = new HashSet<>();
+    private final Set<String> flowSourceIds = new LinkedHashSet<>();
     private final Set<String> flowConditionSourceIds = new HashSet<>();
     private boolean flowConditionResult = false;
     private final Paint flowPaint;
@@ -361,6 +361,7 @@ public class FlowCanvasView extends View {
     }
 
     private void drawConnections(Canvas canvas) {
+        List<String> order = new ArrayList<>(flowSourceIds);
         for (Connection conn : workflow.getConnections()) {
             ViewNode sourceVn = getViewNodeByNodeId(conn.getSourceNodeId());
             ViewNode targetVn = getViewNodeByNodeId(conn.getTargetNodeId());
@@ -370,15 +371,24 @@ public class FlowCanvasView extends View {
                 if (start == null || end == null) continue;
 
                 boolean isCondSource = flowConditionSourceIds.contains(conn.getSourceNodeId());
+                int nodeIdx = -1;
+                if (flowAnimating) {
+                    for (int i = 0; i < order.size(); i++) {
+                        if (order.get(i).equals(conn.getSourceNodeId())) {
+                            nodeIdx = i;
+                            break;
+                        }
+                    }
+                }
                 boolean animatesThisLine = false;
-                if (flowAnimating && flowSourceIds.contains(conn.getSourceNodeId())) {
+                if (nodeIdx >= 0) {
                     if (isCondSource) {
                         animatesThisLine = conn.getConditionResult() == flowConditionResult;
                     } else {
                         animatesThisLine = true;
                     }
                 }
-                Paint paint = animatesThisLine ? getAnimatedFlowPaint() : connectionPaint;
+                Paint paint = animatesThisLine ? getAnimatedFlowPaint(nodeIdx) : connectionPaint;
                 drawBezierConnection(canvas, start.x, start.y, end.x, end.y, paint);
 
                 if (sourceVn.getData().getType() == com.tgflowbot.model.NodeType.CONDITION) {
@@ -391,8 +401,9 @@ public class FlowCanvasView extends View {
         }
     }
 
-    private Paint getAnimatedFlowPaint() {
-        flowPaint.setPathEffect(new DashPathEffect(new float[]{12f, 8f}, flowPhase));
+    private Paint getAnimatedFlowPaint(int nodeIndex) {
+        float phaseOffset = nodeIndex * 20f;
+        flowPaint.setPathEffect(new DashPathEffect(new float[]{12f, 8f}, flowPhase - phaseOffset));
         return flowPaint;
     }
 
