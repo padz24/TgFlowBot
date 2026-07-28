@@ -57,27 +57,26 @@ public class FlowCanvasView extends View {
     private final Paint connectionPaint;
     private final Paint connectionDragPaint;
     private final Paint selectedStrokePaint;
-    private final Paint dotPaint;
     private final Paint labelPaint;
-    private boolean dotAnimating = false;
-    private float dotProgress = 0f;
-    private String pulseSourceNodeId;
-    private final Handler dotHandler = new Handler();
-    private final Runnable dotRunnable = new Runnable() {
+    private boolean flowAnimating = false;
+    private float flowPhase = 0f;
+    private String flowSourceNodeId;
+    private final Paint flowPaint;
+    private final Handler flowHandler = new Handler();
+    private final Runnable flowRunnable = new Runnable() {
         @Override
         public void run() {
-            dotProgress += 0.06f;
-            if (dotProgress > 1f) {
-                dotAnimating = false;
-                pulseSourceNodeId = null;
+            flowPhase += 6f;
+            if (flowPhase > 200f) {
+                flowAnimating = false;
+                flowSourceNodeId = null;
                 invalidate();
                 return;
             }
             invalidate();
-            dotHandler.postDelayed(this, 20);
+            flowHandler.postDelayed(this, 30);
         }
     };
-    private final Paint dotGlowPaint;
 
     private PointF dropTargetPos;
     private NodeType dropNodeType;
@@ -106,9 +105,8 @@ public class FlowCanvasView extends View {
 
         connectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         connectionPaint.setColor(0xFF1976D2);
-        connectionPaint.setStrokeWidth(3f);
+        connectionPaint.setStrokeWidth(2.5f);
         connectionPaint.setStyle(Paint.Style.STROKE);
-        connectionPaint.setPathEffect(new DashPathEffect(new float[]{8f, 4f}, 0f));
 
         connectionDragPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         connectionDragPaint.setColor(0xFF4CAF50);
@@ -121,14 +119,10 @@ public class FlowCanvasView extends View {
         selectedStrokePaint.setStyle(Paint.Style.STROKE);
         selectedStrokePaint.setStrokeWidth(4f);
 
-        dotGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        dotGlowPaint.setColor(0xFFFFEB3B);
-        dotGlowPaint.setStyle(Paint.Style.FILL);
-        dotGlowPaint.setAlpha(60);
-
-        dotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        dotPaint.setColor(0xFFFFEB3B);
-        dotPaint.setStyle(Paint.Style.FILL);
+        flowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        flowPaint.setColor(0xFF64B5F6);
+        flowPaint.setStrokeWidth(3f);
+        flowPaint.setStyle(Paint.Style.STROKE);
 
         labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         labelPaint.setTextSize(24f);
@@ -361,6 +355,7 @@ public class FlowCanvasView extends View {
     }
 
     private void drawConnections(Canvas canvas) {
+        Paint animPaint = null;
         for (Connection conn : workflow.getConnections()) {
             ViewNode sourceVn = getViewNodeByNodeId(conn.getSourceNodeId());
             ViewNode targetVn = getViewNodeByNodeId(conn.getTargetNodeId());
@@ -368,7 +363,10 @@ public class FlowCanvasView extends View {
                 PointF start = sourceVn.getOutputPort() != null ? sourceVn.getOutputPort().getCenter() : null;
                 PointF end = targetVn.getInputPort() != null ? targetVn.getInputPort().getCenter() : null;
                 if (start == null || end == null) continue;
-                drawBezierConnection(canvas, start.x, start.y, end.x, end.y, connectionPaint);
+
+                boolean isAnimating = flowAnimating && conn.getSourceNodeId().equals(flowSourceNodeId);
+                Paint paint = isAnimating ? getAnimatedFlowPaint() : connectionPaint;
+                drawBezierConnection(canvas, start.x, start.y, end.x, end.y, paint);
 
                 if (sourceVn.getData().getType() == com.tgflowbot.model.NodeType.CONDITION) {
                     float mx = (start.x + end.x) / 2f;
@@ -378,29 +376,11 @@ public class FlowCanvasView extends View {
                 }
             }
         }
+    }
 
-        if (dotAnimating && pulseSourceNodeId != null) {
-            for (Connection conn : workflow.getConnections()) {
-                if (!conn.getSourceNodeId().equals(pulseSourceNodeId)) continue;
-                ViewNode targetVn = getViewNodeByNodeId(conn.getTargetNodeId());
-                ViewNode sourceVn = getViewNodeByNodeId(conn.getSourceNodeId());
-                if (sourceVn == null || targetVn == null) continue;
-                PointF start = sourceVn.getOutputPort() != null ? sourceVn.getOutputPort().getCenter() : null;
-                PointF end = targetVn.getInputPort() != null ? targetVn.getInputPort().getCenter() : null;
-                if (start == null || end == null) continue;
-                float t = dotProgress;
-                float x1 = start.x, y1 = start.y, x2 = end.x, y2 = end.y;
-                float ctrlX = (x1 + x2) / 2f;
-                float bx = bezierX(x1, ctrlX, ctrlX, x2, t);
-                float by = bezierY(y1, y1, y2, y2, t);
-                float dotRadius = 5f + 3f * (1f - Math.abs(t - 0.5f) * 2f);
-                int alpha = (int) (255 * (1f - Math.abs(t - 0.5f) * 1.6f));
-                dotGlowPaint.setAlpha(alpha / 3);
-                dotPaint.setAlpha(alpha);
-                canvas.drawCircle(bx, by, dotRadius + 6f, dotGlowPaint);
-                canvas.drawCircle(bx, by, dotRadius, dotPaint);
-            }
-        }
+    private Paint getAnimatedFlowPaint() {
+        flowPaint.setPathEffect(new DashPathEffect(new float[]{12f, 8f}, flowPhase));
+        return flowPaint;
     }
 
     private float bezierX(float p0, float p1, float p2, float p3, float t) {
@@ -414,11 +394,11 @@ public class FlowCanvasView extends View {
     }
 
     public void triggerPulse(String sourceNodeId) {
-        dotAnimating = true;
-        dotProgress = 0f;
-        pulseSourceNodeId = sourceNodeId;
-        dotHandler.removeCallbacks(dotRunnable);
-        dotHandler.post(dotRunnable);
+        flowAnimating = true;
+        flowPhase = 0f;
+        flowSourceNodeId = sourceNodeId;
+        flowHandler.removeCallbacks(flowRunnable);
+        flowHandler.post(flowRunnable);
     }
 
     private void drawBezierConnection(Canvas canvas, float x1, float y1,
