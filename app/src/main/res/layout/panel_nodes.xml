@@ -42,7 +42,7 @@
       android:text="TRIGGER"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FFFFB74D"
       android:letterSpacing="0.1" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -304,7 +304,7 @@
       android:text="CONDITION"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FF81C784"
       android:letterSpacing="0.1" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -324,7 +324,7 @@
       android:text="OUTPUT"
       android:textSize="12sp"
       android:textStyle="bold"
-      android:textColor="?attr/colorOnSurfaceVariant"
+      android:textColor="#FFCE93D8"
       android:letterSpacing="0.1" />
 
     <androidx.recyclerview.widget.RecyclerView
