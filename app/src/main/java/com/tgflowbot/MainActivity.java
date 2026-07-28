@@ -367,7 +367,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String getActionSubcategory(String apiName) {
         if (apiName == null) return "tg";
-        if (apiName.equals("ai_chat")) return "ai";
+        if (apiName.equals("ai_chat") || apiName.equals("_ai_agent")) return "ai";
         if (apiName.startsWith("_add") || apiName.startsWith("_subtract")
                 || apiName.startsWith("_multiply") || apiName.startsWith("_divide")
                 || apiName.startsWith("_modulo") || apiName.startsWith("_random"))
@@ -1477,6 +1477,8 @@ public class MainActivity extends AppCompatActivity {
                     });
                 } else if ("ai_chat".equals(methodName)) {
                     execAiChat(node, chatId, userName, text);
+                } else if ("_ai_agent".equals(methodName)) {
+                    execAiAgent(node, chatId, userName, text);
                 } else if ("_return".equals(methodName)) {
                     addLog("Return: flow berhenti");
                     currentMsgData.put("result", "");
@@ -1753,6 +1755,174 @@ public class MainActivity extends AppCompatActivity {
                             "AI Error: " + error, Snackbar.LENGTH_LONG).show();
                     continueFlow(node, cId, uName, "");
                 });
+            }
+        });
+    }
+
+    private void sendTelegramMessage(String chatId, String message, String parseMode) {
+        String token = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString("bot_token", "");
+        if (token.isEmpty()) return;
+        new Thread(() -> {
+            try {
+                okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
+                okhttp3.FormBody.Builder fb = new okhttp3.FormBody.Builder();
+                fb.add("chat_id", chatId);
+                fb.add("text", message);
+                if (parseMode != null) fb.add("parse_mode", parseMode);
+                okhttp3.Request req = new okhttp3.Request.Builder()
+                        .url("https://api.telegram.org/bot" + token + "/sendMessage")
+                        .post(fb.build()).build();
+                client.newCall(req).execute().close();
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    private void execAiAgent(FlowNode node, String chatId, String userName, String text) {
+        String promptTemplate = node.getProperty("prompt_template");
+        if (promptTemplate == null || promptTemplate.trim().isEmpty()) {
+            promptTemplate = "{{text}}";
+        }
+        final String providerId;
+        String rawProviderId = node.getProperty("provider");
+        if (rawProviderId == null || rawProviderId.trim().isEmpty()) {
+            providerId = "openai";
+        } else {
+            providerId = rawProviderId;
+        }
+        String model = node.getProperty("model");
+        String systemPrompt = node.getProperty("system_prompt");
+        String customEndpoint = node.getProperty("custom_endpoint");
+        String tempStr = node.getProperty("temperature");
+        final float temperature = tempStr != null ? Float.parseFloat(tempStr) : 0.7f;
+        String maxTokensStr = node.getProperty("max_tokens");
+        final int maxTokens = maxTokensStr != null ? Integer.parseInt(maxTokensStr) : 1024;
+        String statusPrefix = node.getProperty("status_prefix");
+        if (statusPrefix == null) statusPrefix = "🤖";
+
+        final String prompt = resolveTemplate(promptTemplate, text, chatId, userName);
+
+        AiProvider[] providers = AiProvider.getBuiltInProviders();
+        AiProvider foundProvider = null;
+        for (AiProvider p : providers) {
+            if (p.id.equals(providerId)) {
+                foundProvider = p;
+                break;
+            }
+        }
+        if (foundProvider == null) {
+            sendTelegramMessage(chatId, statusPrefix + " Provider tidak dikenal: " + providerId, null);
+            return;
+        }
+        final AiProvider provider = foundProvider;
+
+        String apiKeyRaw = "";
+        if (provider.needsApiKey) {
+            apiKeyRaw = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString("ai_key_" + providerId, "");
+            if (apiKeyRaw.isEmpty()) {
+                sendTelegramMessage(chatId, statusPrefix + " API key untuk " + provider.name + " belum disetting", null);
+                return;
+            }
+        }
+        final String apiKey = apiKeyRaw;
+
+        sendTelegramMessage(chatId, statusPrefix + " " + provider.name + " sedang berpikir...", null);
+
+        String useToolsRaw = node.getProperty("use_phone_tools");
+        boolean useTools = "true".equalsIgnoreCase(useToolsRaw);
+        Set<String> connectedPhoneMethods = new HashSet<>();
+        if (useTools) {
+            for (Connection conn : workflow.getConnections()) {
+                if (conn.getSourceNodeId().equals(node.getId())) {
+                    FlowNode target = workflow.findNodeById(conn.getTargetNodeId());
+                    if (target != null) {
+                        String m = target.getProperty("_method");
+                        if (m != null && m.startsWith("_phone_")) {
+                            connectedPhoneMethods.add(m);
+                        }
+                    }
+                }
+            }
+            if (connectedPhoneMethods.isEmpty()) useTools = false;
+        }
+
+        if (!useTools) {
+            AiChatHelper.chat(provider, apiKey, prompt, model, systemPrompt,
+                    temperature, maxTokens, customEndpoint,
+                    new AiChatHelper.AiCallback() {
+                @Override
+                public void onSuccess(String responseText) {
+                    addLog("AI Agent: " + responseText);
+                    currentMsgData.put("result", responseText);
+                    sendTelegramMessage(chatId, statusPrefix + " " + responseText, null);
+                    continueFlow(node, chatId, userName, responseText);
+                }
+
+                @Override
+                public void onError(String error) {
+                    addLog("AI Agent Error: " + error);
+                    currentMsgData.put("error", error);
+                    sendTelegramMessage(chatId, statusPrefix + " Error: " + error, null);
+                    continueFlow(node, chatId, userName, "");
+                }
+            });
+            return;
+        }
+
+        List<AiChatHelper.ToolDefinition> toolDefs = buildAiToolDefs(connectedPhoneMethods);
+        List<String> history = new ArrayList<>();
+
+        AiChatHelper.chatWithTools(provider, apiKey, prompt, model, systemPrompt,
+                temperature, maxTokens, customEndpoint, toolDefs, history,
+                new AiChatHelper.AiToolCallback() {
+            @Override
+            public void onToolCalls(List<AiChatHelper.ToolCall> calls, Runnable retry) {
+                for (AiChatHelper.ToolCall call : calls) {
+                    sendTelegramMessage(chatId, statusPrefix + " Mengeksekusi: " + call.name.replace("_phone_", ""), null);
+                    JsonObject asstMsg = new JsonObject();
+                    asstMsg.addProperty("role", "assistant");
+                    asstMsg.addProperty("content", (String) null);
+                    JsonArray tcs = new JsonArray();
+                    JsonObject tc = new JsonObject();
+                    tc.addProperty("id", call.id);
+                    tc.addProperty("type", "function");
+                    JsonObject func = new JsonObject();
+                    func.addProperty("name", call.name);
+                    func.addProperty("arguments", call.arguments);
+                    tc.add("function", func);
+                    tcs.add(tc);
+                    asstMsg.add("tool_calls", tcs);
+                    history.add(asstMsg.toString());
+
+                    String result = executeTool(call.name, call.arguments, chatId, userName, text);
+
+                    JsonObject toolMsg = new JsonObject();
+                    toolMsg.addProperty("role", "tool");
+                    toolMsg.addProperty("tool_call_id", call.id);
+                    toolMsg.addProperty("content", result != null ? result : "ok");
+                    history.add(toolMsg.toString());
+                    break;
+                }
+
+                AiChatHelper.continueWithToolResults(provider, apiKey, model,
+                        systemPrompt, temperature, maxTokens, customEndpoint,
+                        toolDefs, history, this);
+            }
+
+            @Override
+            public void onSuccess(String responseText) {
+                addLog("AI Agent: " + responseText);
+                currentMsgData.put("result", responseText);
+                sendTelegramMessage(chatId, statusPrefix + " " + responseText, null);
+                continueFlow(node, chatId, userName, responseText);
+            }
+
+            @Override
+            public void onError(String error) {
+                addLog("AI Agent Error: " + error);
+                currentMsgData.put("error", error);
+                sendTelegramMessage(chatId, statusPrefix + " Error: " + error, null);
+                continueFlow(node, chatId, userName, "");
             }
         });
     }
